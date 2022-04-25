@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"pricetracker/internal/database"
+	"strconv"
 	"time"
 )
 
@@ -21,21 +22,23 @@ const (
 	siteBlibli
 )
 
-func siteTypeFromURL(urlStr string) (siteType, error) {
+func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-		return siteTypeInvalid, err
+		return siteTypeInvalid, "", err
 	}
+
+	cleanURL := "https://" + parsedURL.Host + parsedURL.Path
 
 	if parsedURL.Host == "shopee.co.id" {
-		return siteShopee, nil
+		return siteShopee, cleanURL, nil
 	} else if parsedURL.Host == "www.tokopedia.com" {
-		return siteTokopedia, nil
+		return siteTokopedia, cleanURL, nil
 	} else if parsedURL.Host == "www.blibli.com" {
-		return siteBlibli, nil
+		return siteBlibli, cleanURL, nil
 	}
 
-	return siteTypeInvalid, errors.New("invalid site url")
+	return siteTypeInvalid, "", errors.Errorf("invalid site url: %+v", cleanURL)
 }
 
 func (s Server) writeResponse(w http.ResponseWriter, response any) {
@@ -56,6 +59,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 		ProductVariant string `json:"product_variant"`
 		Price          int    `json:"price"`
 		Stock          int    `json:"stock"`
+		ImageURL       string `json:"image_url"`
 		MerchantName   string `json:"merchant_name"`
 		Site           string `json:"site"`
 	}
@@ -67,7 +71,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 			return
 		}
 
-		siteType, err := siteTypeFromURL(req.URL)
+		siteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -75,27 +79,28 @@ func (s Server) itemAdd() http.HandlerFunc {
 
 		switch siteType {
 		case siteShopee:
-			shopeeItem, err := s.Client.ShopeeGetItem(req.URL)
+			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				s.Logger.Errorf("Error getting Shopee item, url: %+v, err: %+v", req.URL, err)
+				s.Logger.Errorf("Error getting Shopee item with url: %+v, err: %+v", cleanURL, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			item := database.Item{
-				URL:            req.URL,
+			i := database.Item{
+				URL:            cleanURL,
 				Name:           shopeeItem.Name,
-				ProductID:      shopeeItem.ItemID,
+				ProductID:      strconv.Itoa(shopeeItem.ItemID),
 				ProductVariant: "-",
-				MerchantName:   shopeeItem.ShopID,
+				ImageURL:       shopeeItem.ImageURL,
+				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
 				Site:           "Shopee",
 				CreatedAt:      primitive.NewDateTimeFromTime(time.Now()),
 				UpdatedAt:      primitive.NewDateTimeFromTime(time.Now()),
 			}
 
-			id, err := s.DB.ItemInsert(r.Context(), item)
+			id, err := s.DB.ItemInsert(r.Context(), i)
 			if err != nil {
-				s.Logger.Errorf("Error inserting Item: %+v, err: %+v", item, err)
+				s.Logger.Errorf("Error inserting Item: %+v, err: %+v", i, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -105,25 +110,26 @@ func (s Server) itemAdd() http.HandlerFunc {
 				s.Logger.Errorf("Error creating ObjectID from hex string: %+v, err: %+v", id, err)
 			}
 
-			itemHistory := database.ItemHistory{
+			ih := database.ItemHistory{
 				ItemID:    objID,
 				Price:     shopeeItem.Price,
 				Stock:     shopeeItem.Stock,
 				Timestamp: primitive.NewDateTimeFromTime(time.Now()),
 			}
-			if err = s.DB.ItemHistoryInsert(r.Context(), itemHistory); err != nil {
-				s.Logger.Errorf("Error inserting ItemHistory: %+v, err: %+v", itemHistory, err)
+			if err = s.DB.ItemHistoryInsert(r.Context(), ih); err != nil {
+				s.Logger.Errorf("Error inserting ItemHistory: %+v, err: %+v", ih, err)
 			}
 
 			resp := response{
 				ItemID:         id,
-				Name:           item.Name,
-				ProductID:      item.ProductID,
-				ProductVariant: item.ProductVariant,
-				Price:          itemHistory.Price,
-				Stock:          itemHistory.Stock,
-				MerchantName:   item.MerchantName,
-				Site:           item.Site,
+				Name:           i.Name,
+				ProductID:      i.ProductID,
+				ProductVariant: i.ProductVariant,
+				Price:          ih.Price,
+				Stock:          ih.Stock,
+				ImageURL:       i.ImageURL,
+				MerchantName:   i.MerchantName,
+				Site:           i.Site,
 			}
 
 			s.writeResponse(w, resp)
@@ -141,6 +147,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 		ProductVariant string `json:"product_variant"`
 		Price          int    `json:"price"`
 		Stock          int    `json:"stock"`
+		ImageURL       string `json:"image_url"`
 		MerchantName   string `json:"merchant_name"`
 		Site           string `json:"site"`
 	}
@@ -152,7 +159,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 			return
 		}
 
-		siteType, err := siteTypeFromURL(req.URL)
+		siteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -160,20 +167,21 @@ func (s Server) itemCheck() http.HandlerFunc {
 
 		switch siteType {
 		case siteShopee:
-			shopeeItem, err := s.Client.ShopeeGetItem(req.URL)
+			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				s.Logger.Errorf("Error getting Shopee item, url: %+v, err: %+v", req.URL, err)
+				s.Logger.Errorf("Error getting Shopee item, url: %+v, err: %+v", cleanURL, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
 			resp := response{
 				Name:           shopeeItem.Name,
-				ProductID:      shopeeItem.ItemID,
+				ProductID:      strconv.Itoa(shopeeItem.ItemID),
 				ProductVariant: "-",
 				Price:          shopeeItem.Price,
 				Stock:          shopeeItem.Stock,
-				MerchantName:   shopeeItem.ShopID,
+				ImageURL:       shopeeItem.ImageURL,
+				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
 				Site:           "Shopee",
 			}
 
@@ -190,16 +198,17 @@ func (s Server) itemGetOne() http.HandlerFunc {
 		ProductVariant string `json:"product_variant"`
 		Price          int    `json:"price"`
 		Stock          int    `json:"stock"`
+		ImageURL       string `json:"image_url"`
 		MerchantName   string `json:"merchant_name"`
 		Site           string `json:"site"`
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := mux.Vars(r)["itemID"]
-		item, err := s.DB.ItemFind(r.Context(), id)
+		i, err := s.DB.ItemFind(r.Context(), id)
 		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				http.Error(w, "item not found", http.StatusNotFound)
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				http.Error(w, "Item not found", http.StatusNotFound)
 				return
 			} else {
 				s.Logger.Errorf("Error finding Item from ID: %+v, err: %+v", id, err)
@@ -208,22 +217,23 @@ func (s Server) itemGetOne() http.HandlerFunc {
 			}
 		}
 
-		itemHist, err := s.DB.ItemHistoryFindLatest(r.Context(), item.ID)
+		ih, err := s.DB.ItemHistoryFindLatest(r.Context(), i.ID)
 		if err != nil {
-			s.Logger.Errorf("Error finding ItemHistory from ItemID: %+v, err: %+v", item.ID, err)
+			s.Logger.Errorf("Error finding ItemHistory from ItemID: %+v, err: %+v", i.ID, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		resp := response{
 			ItemID:         id,
-			Name:           item.Name,
-			ProductID:      item.ProductID,
-			ProductVariant: item.ProductVariant,
-			Price:          itemHist.Price,
-			Stock:          itemHist.Stock,
-			MerchantName:   item.MerchantName,
-			Site:           item.Site,
+			Name:           i.Name,
+			ProductID:      i.ProductID,
+			ProductVariant: i.ProductVariant,
+			Price:          ih.Price,
+			Stock:          ih.Stock,
+			ImageURL:       i.ImageURL,
+			MerchantName:   i.MerchantName,
+			Site:           i.Site,
 		}
 
 		s.writeResponse(w, resp)
@@ -238,6 +248,7 @@ func (s Server) itemGetAll() http.HandlerFunc {
 		ProductVariant string `json:"product_variant"`
 		Price          int    `json:"price"`
 		Stock          int    `json:"stock"`
+		ImageURL       string `json:"image_url"`
 		MerchantName   string `json:"merchant_name"`
 		Site           string `json:"site"`
 	}
@@ -265,6 +276,7 @@ func (s Server) itemGetAll() http.HandlerFunc {
 				ProductVariant: i.ProductVariant,
 				Price:          ih.Price,
 				Stock:          ih.Stock,
+				ImageURL:       i.ImageURL,
 				MerchantName:   i.MerchantName,
 				Site:           i.Site,
 			})
