@@ -19,18 +19,21 @@ func (s Server) fetchData() {
 	is, err := s.DB.ItemFindAll(context.TODO())
 	if err != nil {
 		s.Logger.Errorf("Error getting all items from database, err: %+v", err)
+		return
 	}
 
 	for _, i := range is {
-		siteType, err := siteTypeFromURL(i.URL)
+		siteType, cleanURL, err := siteTypeAndCleanURL(i.URL)
 		if err != nil {
 			s.Logger.Errorf("Error getting site type from url: %+v, err: %+v", i.URL, err)
+			continue
 		}
 		switch siteType {
 		case siteShopee:
-			shopeeItem, err := s.Client.ShopeeGetItem(i.URL)
+			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				s.Logger.Errorf("Error getting Shopee item from url: %+v, err: %+v", i.URL, err)
+				s.Logger.Errorf("Error getting Shopee item from url: %+v, err: %+v", cleanURL, err)
+				continue
 			}
 			ih := database.ItemHistory{
 				ItemID:    i.ID,
@@ -40,6 +43,7 @@ func (s Server) fetchData() {
 			}
 			if err = s.DB.ItemHistoryInsert(context.TODO(), ih); err != nil {
 				s.Logger.Errorf("Error inserting ItemHistory: %+v, err: %+v", ih, err)
+				continue
 			}
 		}
 	}

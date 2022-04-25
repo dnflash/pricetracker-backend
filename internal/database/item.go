@@ -14,6 +14,7 @@ type Item struct {
 	Name           string             `bson:"name"`
 	ProductID      string             `bson:"product_id"`
 	ProductVariant string             `bson:"product_variant"`
+	ImageURL       string             `bson:"image_url"`
 	MerchantName   string             `bson:"merchant_name"`
 	Site           string             `bson:"site"`
 	CreatedAt      primitive.DateTime `bson:"created_at"`
