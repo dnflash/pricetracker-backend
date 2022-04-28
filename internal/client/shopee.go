@@ -35,7 +35,10 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	if err != nil {
 		return ShopeeItemResponseData{}, errors.Wrapf(err, "error creating request from apiURL: %+v", apiURL)
 	}
-
+	req.AddCookie(&http.Cookie{
+		Name:  "SPC_U",
+		Value: "-",
+	})
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		return ShopeeItemResponseData{}, errors.Wrapf(err, "error doing request: %+v", req)
@@ -57,6 +60,7 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 			"error decoding ShopeeItemAPI response body, apiURL: %+v, body:\n%+v", apiURL, string(body))
 	}
 
+	shopeeItemResp.Data.Price /= 100000
 	shopeeItemResp.Data.ImageURL = "https://cf.shopee.co.id/file/" + shopeeItemResp.Data.ImageURL
 
 	return shopeeItemResp.Data, nil
