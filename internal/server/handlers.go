@@ -41,7 +41,8 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 	return siteTypeInvalid, "", errors.Errorf("invalid site url: %+v", cleanURL)
 }
 
-func (s Server) writeResponse(w http.ResponseWriter, response any) {
+func (s Server) writeJsonResponse(w http.ResponseWriter, response any) {
+	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		s.Logger.Errorf("Error encoding response: %+v, err: %+v", response, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -94,8 +95,6 @@ func (s Server) itemAdd() http.HandlerFunc {
 				ImageURL:       shopeeItem.ImageURL,
 				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
 				Site:           "Shopee",
-				CreatedAt:      primitive.NewDateTimeFromTime(time.Now()),
-				UpdatedAt:      primitive.NewDateTimeFromTime(time.Now()),
 			}
 
 			id, err := s.DB.ItemInsert(r.Context(), i)
@@ -132,7 +131,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 				Site:           i.Site,
 			}
 
-			s.writeResponse(w, resp)
+			s.writeJsonResponse(w, resp)
 		}
 	}
 }
@@ -185,7 +184,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 				Site:           "Shopee",
 			}
 
-			s.writeResponse(w, resp)
+			s.writeJsonResponse(w, resp)
 		}
 	}
 }
@@ -236,7 +235,7 @@ func (s Server) itemGetOne() http.HandlerFunc {
 			Site:           i.Site,
 		}
 
-		s.writeResponse(w, resp)
+		s.writeJsonResponse(w, resp)
 	}
 }
 
@@ -282,7 +281,7 @@ func (s Server) itemGetAll() http.HandlerFunc {
 			})
 		}
 
-		s.writeResponse(w, resp)
+		s.writeJsonResponse(w, resp)
 	}
 }
 
@@ -328,6 +327,6 @@ func (s Server) itemHistory() http.HandlerFunc {
 			})
 		}
 
-		s.writeResponse(w, resp)
+		s.writeJsonResponse(w, resp)
 	}
 }

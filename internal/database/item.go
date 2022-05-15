@@ -6,6 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"time"
 )
 
 type Item struct {
@@ -33,6 +34,8 @@ func (db Database) ItemInsert(ctx context.Context, i Item) (id string, err error
 	).Decode(&existingI)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
+			i.CreatedAt = primitive.NewDateTimeFromTime(time.Now())
+			i.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
 			r, err := db.Collection(CollectionItems).InsertOne(ctx, i)
 			if err != nil {
 				return "", errors.Wrapf(err, "error inserting Item: %+v", i)

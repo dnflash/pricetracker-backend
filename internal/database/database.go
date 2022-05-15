@@ -11,6 +11,7 @@ const (
 	Name                    = "price_tracker_db"
 	CollectionItems         = "items"
 	CollectionItemHistories = "item_histories"
+	CollectionUsers         = "users"
 )
 
 type Database struct {
@@ -45,6 +46,17 @@ func ConnectDB(dbURI string) (*mongo.Client, error) {
 				{Key: "item_id", Value: 1},
 				{Key: "ts", Value: -1},
 			},
+			Options: options.Index().SetUnique(true),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = c.Database(Name).Collection(CollectionUsers).Indexes().CreateOne(
+		context.Background(),
+		mongo.IndexModel{
+			Keys:    bson.D{{Key: "email", Value: 1}},
 			Options: options.Index().SetUnique(true),
 		},
 	)

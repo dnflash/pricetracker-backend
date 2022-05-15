@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"net/http"
+	"os"
 	"pricetracker/internal/client"
+	"pricetracker/internal/configuration"
 	"pricetracker/internal/database"
 	"pricetracker/internal/logger"
 	"pricetracker/internal/server"
@@ -11,19 +13,27 @@ import (
 )
 
 func main() {
-	dbURI := "mongodb://localhost:27017"
-	serverAddr := "localhost:8888"
-	appLogger := logger.NewLogger(true, true, true)
+	appLogger := logger.NewLogger(false, false, true)
 
-	appLogger.Info("Connecting to DB at", dbURI)
-	dbConn, err := database.ConnectDB(dbURI)
+	config, err := configuration.GetConfig("config.toml")
 	if err != nil {
-		appLogger.Error("Error when connecting to database", err)
+		appLogger.Error("Error getting configuration from config.toml:", err)
+		os.Exit(1)
+	}
+
+	appLogger = logger.NewLogger(config.LogDebugEnabled, config.LogInfoEnabled, config.LogErrorEnabled)
+
+	appLogger.Debugf("Configuration: %+v", *config)
+
+	appLogger.Info("Connecting to DB at", config.DatabaseURI)
+	dbConn, err := database.ConnectDB(config.DatabaseURI)
+	if err != nil {
+		appLogger.Error("Error connecting to database:", err)
 		panic(err)
 	}
 	defer func() {
 		if err := dbConn.Disconnect(context.Background()); err != nil {
-			appLogger.Error("Error when disconnecting from database", err)
+			appLogger.Error("Error disconnecting from database:", err)
 		}
 	}()
 
@@ -33,14 +43,15 @@ func main() {
 			Client: &http.Client{Timeout: 15 * time.Second},
 			Logger: appLogger,
 		},
-		Logger: appLogger,
+		Logger:        appLogger,
+		AuthSecretKey: config.AuthSecretKey,
 	}
 
-	go srv.FetchDataInInterval(time.NewTicker(60 * time.Second))
+	go srv.FetchDataInInterval(time.NewTicker(config.FetchDataInterval))
 
 	httpSrv := &http.Server{
 		Handler:      srv.Router(),
-		Addr:         serverAddr,
+		Addr:         config.ServerAddress,
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
