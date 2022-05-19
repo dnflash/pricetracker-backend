@@ -16,8 +16,8 @@ func (s Server) Router() *mux.Router {
 
 	r.HandleFunc("/api/user/register", s.userRegister()).Methods(http.MethodPost)
 	r.HandleFunc("/api/user/login", s.userLogin()).Methods(http.MethodPost)
-	r.HandleFunc("/api/user/logout", s.authenticateUser(s.userLogout())).Methods(http.MethodPost)
-	r.HandleFunc("/api/user/info", s.authenticateUser(s.userInfo())).Methods(http.MethodGet)
+	r.HandleFunc("/api/user/logout", s.authMiddleware(s.userLogout())).Methods(http.MethodPost)
+	r.HandleFunc("/api/user/info", s.authMiddleware(s.userInfo())).Methods(http.MethodPost)
 
 	return r
 }

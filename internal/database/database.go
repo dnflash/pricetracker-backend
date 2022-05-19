@@ -64,5 +64,16 @@ func ConnectDB(dbURI string) (*mongo.Client, error) {
 		return nil, err
 	}
 
+	_, err = c.Database(Name).Collection(CollectionUsers).Indexes().CreateOne(
+		context.Background(),
+		mongo.IndexModel{
+			Keys:    bson.D{{Key: "devices.fcm_token", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return c, nil
 }
