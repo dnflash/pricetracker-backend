@@ -8,16 +8,23 @@ import (
 func (s Server) Router() *mux.Router {
 	r := mux.NewRouter()
 
-	r.HandleFunc("/api/item/add", s.itemAdd()).Methods(http.MethodPost)
-	r.HandleFunc("/api/item/check", s.itemCheck()).Methods(http.MethodPost)
-	r.HandleFunc("/api/item/get/{itemID}", s.itemGetOne()).Methods(http.MethodGet)
-	r.HandleFunc("/api/item/get", s.itemGetAll()).Methods(http.MethodGet)
-	r.HandleFunc("/api/item/history/{itemID}", s.itemHistory()).Methods(http.MethodPost)
+	api := r.PathPrefix("/api").Subrouter()
 
-	r.HandleFunc("/api/user/register", s.userRegister()).Methods(http.MethodPost)
-	r.HandleFunc("/api/user/login", s.userLogin()).Methods(http.MethodPost)
-	r.HandleFunc("/api/user/logout", s.authMiddleware(s.userLogout())).Methods(http.MethodPost)
-	r.HandleFunc("/api/user/info", s.authMiddleware(s.userInfo())).Methods(http.MethodPost)
+	api.HandleFunc("/user/register", s.userRegister()).Methods(http.MethodPost)
+	api.HandleFunc("/user/login", s.userLogin()).Methods(http.MethodPost)
+
+	userAPI := api.PathPrefix("/user").Subrouter()
+	userAPI.Use(s.authMiddleware)
+	userAPI.HandleFunc("/logout", s.userLogout()).Methods(http.MethodPost)
+	userAPI.HandleFunc("/info", s.userInfo()).Methods(http.MethodPost)
+
+	itemAPI := api.PathPrefix("/item").Subrouter()
+	itemAPI.Use(s.authMiddleware)
+	itemAPI.HandleFunc("/add", s.itemAdd()).Methods(http.MethodPost)
+	itemAPI.HandleFunc("/check", s.itemCheck()).Methods(http.MethodPost)
+	itemAPI.HandleFunc("/get/{itemID}", s.itemGetOne()).Methods(http.MethodGet)
+	itemAPI.HandleFunc("/get", s.itemGetAll()).Methods(http.MethodGet)
+	itemAPI.HandleFunc("/history/{itemID}", s.itemHistory()).Methods(http.MethodPost)
 
 	return r
 }

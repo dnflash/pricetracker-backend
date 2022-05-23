@@ -18,19 +18,19 @@ type Database struct {
 	*mongo.Database
 }
 
-func ConnectDB(dbURI string) (*mongo.Client, error) {
-	c, err := mongo.Connect(context.Background(), options.Client().ApplyURI(dbURI))
+func ConnectDB(ctx context.Context, dbURI string) (*mongo.Client, error) {
+	c, err := mongo.Connect(ctx, options.Client().ApplyURI(dbURI))
 	if err != nil {
 		return nil, err
 	}
 
 	_, err = c.Database(Name).Collection(CollectionItems).Indexes().CreateOne(
-		context.Background(),
+		ctx,
 		mongo.IndexModel{
 			Keys: bson.D{
+				{Key: "site", Value: 1},
 				{Key: "product_id", Value: 1},
 				{Key: "product_variant", Value: 1},
-				{Key: "site", Value: 1},
 			},
 			Options: options.Index().SetUnique(true),
 		},
@@ -40,7 +40,7 @@ func ConnectDB(dbURI string) (*mongo.Client, error) {
 	}
 
 	_, err = c.Database(Name).Collection(CollectionItemHistories).Indexes().CreateOne(
-		context.Background(),
+		ctx,
 		mongo.IndexModel{
 			Keys: bson.D{
 				{Key: "item_id", Value: 1},
@@ -53,22 +53,21 @@ func ConnectDB(dbURI string) (*mongo.Client, error) {
 		return nil, err
 	}
 
-	_, err = c.Database(Name).Collection(CollectionUsers).Indexes().CreateOne(
-		context.Background(),
-		mongo.IndexModel{
-			Keys:    bson.D{{Key: "email", Value: 1}},
-			Options: options.Index().SetUnique(true),
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = c.Database(Name).Collection(CollectionUsers).Indexes().CreateOne(
-		context.Background(),
-		mongo.IndexModel{
-			Keys:    bson.D{{Key: "devices.fcm_token", Value: 1}},
-			Options: options.Index().SetUnique(true),
+	_, err = c.Database(Name).Collection(CollectionUsers).Indexes().CreateMany(
+		ctx,
+		[]mongo.IndexModel{
+			{
+				Keys:    bson.D{{Key: "email", Value: 1}},
+				Options: options.Index().SetUnique(true),
+			},
+			{
+				Keys:    bson.D{{Key: "tracked_items.item_id", Value: 1}},
+				Options: options.Index().SetUnique(false),
+			},
+			{
+				Keys:    bson.D{{Key: "devices.fcm_token", Value: 1}},
+				Options: options.Index().SetUnique(true),
+			},
 		},
 	)
 	if err != nil {

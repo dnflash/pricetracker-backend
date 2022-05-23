@@ -2,12 +2,14 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"net/http"
 	"net/url"
+	"pricetracker/internal/client"
 	"pricetracker/internal/database"
 	"strconv"
 	"time"
@@ -16,8 +18,7 @@ import (
 type siteType int
 
 const (
-	siteTypeInvalid siteType = iota
-	siteShopee
+	siteShopee siteType = iota
 	siteTokopedia
 	siteBlibli
 )
@@ -25,7 +26,7 @@ const (
 func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-		return siteTypeInvalid, "", err
+		return -1, "", err
 	}
 
 	cleanURL := "https://" + parsedURL.Host + parsedURL.Path
@@ -38,34 +39,27 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 		return siteBlibli, cleanURL, nil
 	}
 
-	return siteTypeInvalid, "", errors.Errorf("invalid site url: %+v", cleanURL)
-}
-
-func (s Server) writeJsonResponse(w http.ResponseWriter, response any) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		s.Logger.Errorf("Error encoding response: %+v, err: %+v", response, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	return -1, "", errors.Errorf("invalid site url: %+v", cleanURL)
 }
 
 func (s Server) itemAdd() http.HandlerFunc {
 	type request struct {
-		URL string `json:"url"`
+		URL                 string `json:"url"`
+		PriceLowerBound     int    `json:"price_lower_bound"`
+		NotificationEnabled bool   `json:"notification_enabled"`
 	}
 	type response struct {
-		ItemID         string `json:"item_id"`
-		Name           string `json:"name"`
-		ProductID      string `json:"product_id"`
-		ProductVariant string `json:"product_variant"`
-		Price          int    `json:"price"`
-		Stock          int    `json:"stock"`
-		ImageURL       string `json:"image_url"`
-		MerchantName   string `json:"merchant_name"`
-		Site           string `json:"site"`
+		ItemID string `json:"item_id"`
+		database.Item
 	}
-
 	return func(w http.ResponseWriter, r *http.Request) {
+		uc, ok := r.Context().Value(userContextKey{}).(userContext)
+		if !ok {
+			s.Logger.Error("itemAdd: Error getting userContext")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
 		req := &request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -82,98 +76,19 @@ func (s Server) itemAdd() http.HandlerFunc {
 		case siteShopee:
 			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				s.Logger.Errorf("Error getting Shopee item with url: %+v, err: %+v", cleanURL, err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				if errors.Is(err, client.ShopeeItemNotFoundErr) {
+					s.Logger.Debugf("itemAdd: Item not found when getting Shopee item with url: %+v, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+					return
+				}
+
+				s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %+v, err: %+v", cleanURL, err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 
 			i := database.Item{
-				URL:            cleanURL,
-				Name:           shopeeItem.Name,
-				ProductID:      strconv.Itoa(shopeeItem.ItemID),
-				ProductVariant: "-",
-				ImageURL:       shopeeItem.ImageURL,
-				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
-				Site:           "Shopee",
-			}
-
-			id, err := s.DB.ItemInsert(r.Context(), i)
-			if err != nil {
-				s.Logger.Errorf("Error inserting Item: %+v, err: %+v", i, err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			objID, err := primitive.ObjectIDFromHex(id)
-			if err != nil {
-				s.Logger.Errorf("Error creating ObjectID from hex string: %+v, err: %+v", id, err)
-			}
-
-			ih := database.ItemHistory{
-				ItemID:    objID,
-				Price:     shopeeItem.Price,
-				Stock:     shopeeItem.Stock,
-				Timestamp: primitive.NewDateTimeFromTime(time.Now()),
-			}
-			if err = s.DB.ItemHistoryInsert(r.Context(), ih); err != nil {
-				s.Logger.Errorf("Error inserting ItemHistory: %+v, err: %+v", ih, err)
-			}
-
-			resp := response{
-				ItemID:         id,
-				Name:           i.Name,
-				ProductID:      i.ProductID,
-				ProductVariant: i.ProductVariant,
-				Price:          ih.Price,
-				Stock:          ih.Stock,
-				ImageURL:       i.ImageURL,
-				MerchantName:   i.MerchantName,
-				Site:           i.Site,
-			}
-
-			s.writeJsonResponse(w, resp)
-		}
-	}
-}
-
-func (s Server) itemCheck() http.HandlerFunc {
-	type request struct {
-		URL string `json:"url"`
-	}
-	type response struct {
-		Name           string `json:"name"`
-		ProductID      string `json:"product_id"`
-		ProductVariant string `json:"product_variant"`
-		Price          int    `json:"price"`
-		Stock          int    `json:"stock"`
-		ImageURL       string `json:"image_url"`
-		MerchantName   string `json:"merchant_name"`
-		Site           string `json:"site"`
-	}
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		req := &request{}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		siteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		switch siteType {
-		case siteShopee:
-			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
-			if err != nil {
-				s.Logger.Errorf("Error getting Shopee item, url: %+v, err: %+v", cleanURL, err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			resp := response{
+				URL:            fmt.Sprintf("https://shopee.co.id/product/%d/%d", shopeeItem.ShopID, shopeeItem.ItemID),
 				Name:           shopeeItem.Name,
 				ProductID:      strconv.Itoa(shopeeItem.ItemID),
 				ProductVariant: "-",
@@ -184,100 +99,171 @@ func (s Server) itemCheck() http.HandlerFunc {
 				Site:           "Shopee",
 			}
 
-			s.writeJsonResponse(w, resp)
+			id, err := s.DB.ItemInsert(r.Context(), i)
+			if err != nil {
+				s.Logger.Errorf("itemAdd: Error inserting Item: %+v, err: %+v", i, err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			objID, err := primitive.ObjectIDFromHex(id)
+			if err != nil {
+				s.Logger.Errorf("itemAdd: Error creating ObjectID from hex string: %+v, err: %+v", id, err)
+			}
+
+			ih := database.ItemHistory{
+				ItemID:    objID,
+				Price:     shopeeItem.Price,
+				Stock:     shopeeItem.Stock,
+				Timestamp: primitive.NewDateTimeFromTime(time.Now()),
+			}
+			if err = s.DB.ItemHistoryInsert(r.Context(), ih); err != nil {
+				s.Logger.Errorf("itemAdd: Error inserting ItemHistory: %+v, err: %+v", ih, err)
+			}
+
+			ti := database.TrackedItem{
+				ItemID:              objID,
+				PriceLowerBound:     req.PriceLowerBound,
+				NotificationCount:   0,
+				NotificationEnabled: req.NotificationEnabled,
+			}
+			if err = s.DB.UserTrackedItemUpdateOrAdd(r.Context(), uc.id, ti); err != nil {
+				s.Logger.Errorf("itemAdd: Error adding TrackedItem to User, err: %+v", err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+
+			s.writeJsonResponse(w, response{
+				ItemID: id,
+				Item:   i,
+			})
+		}
+	}
+}
+
+func (s Server) itemCheck() http.HandlerFunc {
+	type request struct {
+		URL string `json:"url"`
+	}
+	type response struct {
+		database.Item
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := &request{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		siteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		switch siteType {
+		case siteShopee:
+			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
+			if err != nil {
+				if errors.Is(err, client.ShopeeItemNotFoundErr) {
+					s.Logger.Debugf("itemCheck: Item not found when getting Shopee item with url: %+v, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+					return
+				}
+
+				s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %+v, err: %+v", cleanURL, err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+
+			i := database.Item{
+				URL:            fmt.Sprintf("https://shopee.co.id/product/%d/%d", shopeeItem.ShopID, shopeeItem.ItemID),
+				Name:           shopeeItem.Name,
+				ProductID:      strconv.Itoa(shopeeItem.ItemID),
+				ProductVariant: "-",
+				Price:          shopeeItem.Price,
+				Stock:          shopeeItem.Stock,
+				ImageURL:       shopeeItem.ImageURL,
+				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
+				Site:           "Shopee",
+			}
+
+			s.writeJsonResponse(w, response{i})
 		}
 	}
 }
 
 func (s Server) itemGetOne() http.HandlerFunc {
 	type response struct {
-		ItemID         string `json:"item_id"`
-		Name           string `json:"name"`
-		ProductID      string `json:"product_id"`
-		ProductVariant string `json:"product_variant"`
-		Price          int    `json:"price"`
-		Stock          int    `json:"stock"`
-		ImageURL       string `json:"image_url"`
-		MerchantName   string `json:"merchant_name"`
-		Site           string `json:"site"`
+		ItemID string `json:"item_id"`
+		database.Item
 	}
-
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := mux.Vars(r)["itemID"]
-		i, err := s.DB.ItemFind(r.Context(), id)
+		if id == "" {
+			s.Logger.Debugf("itemGetOne: itemID not supplied")
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
+
+		i, err := s.DB.ItemFindOne(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, mongo.ErrNoDocuments) {
-				http.Error(w, "Item not found", http.StatusNotFound)
+				s.Logger.Debugf("itemGetOne: No documents found for Item with ID: %s, err: %v", id, err)
+				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 				return
 			} else {
-				s.Logger.Errorf("Error finding Item from ID: %+v, err: %+v", id, err)
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				s.Logger.Errorf("itemGetOne: Error finding Item with ID: %s, err: %v", id, err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 		}
 
-		ih, err := s.DB.ItemHistoryFindLatest(r.Context(), i.ID)
-		if err != nil {
-			s.Logger.Errorf("Error finding ItemHistory from ItemID: %+v, err: %+v", i.ID, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		resp := response{
-			ItemID:         id,
-			Name:           i.Name,
-			ProductID:      i.ProductID,
-			ProductVariant: i.ProductVariant,
-			Price:          ih.Price,
-			Stock:          ih.Stock,
-			ImageURL:       i.ImageURL,
-			MerchantName:   i.MerchantName,
-			Site:           i.Site,
-		}
-
-		s.writeJsonResponse(w, resp)
+		s.writeJsonResponse(w, response{
+			ItemID: i.ID.Hex(),
+			Item:   i,
+		})
 	}
 }
 
 func (s Server) itemGetAll() http.HandlerFunc {
 	type item struct {
-		ItemID         string `json:"item_id"`
-		Name           string `json:"name"`
-		ProductID      string `json:"product_id"`
-		ProductVariant string `json:"product_variant"`
-		Price          int    `json:"price"`
-		Stock          int    `json:"stock"`
-		ImageURL       string `json:"image_url"`
-		MerchantName   string `json:"merchant_name"`
-		Site           string `json:"site"`
+		ItemID string `json:"item_id"`
+		database.Item
 	}
 	type response []item
-
 	return func(w http.ResponseWriter, r *http.Request) {
-		is, err := s.DB.ItemFindAll(r.Context())
+		uc, ok := r.Context().Value(userContextKey{}).(userContext)
+		if !ok {
+			s.Logger.Error("itemGetAll: Error getting userContext")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		u, err := s.DB.UserFindByID(r.Context(), uc.id)
 		if err != nil {
-			s.Logger.Errorf("Error getting all Item, err: %+v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			s.Logger.Error("itemGetAll: Error finding User with ID: %s", uc.id)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		itemIDs := []primitive.ObjectID{}
+		for _, ti := range u.TrackedItems {
+			itemIDs = append(itemIDs, ti.ItemID)
+		}
+
+		is, err := s.DB.ItemsFind(r.Context(), itemIDs)
+		if err != nil {
+			s.Logger.Errorf("itemGetAll: Error getting all Item for User with ID: %s, err: %+v", uc.id, err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 
 		resp := response{}
 		for _, i := range is {
-			ih, err := s.DB.ItemHistoryFindLatest(r.Context(), i.ID)
-			if err != nil {
-				s.Logger.Errorf("Error getting ItemHistory for Item: %+v, err: %+v", i, err)
-				continue
-			}
 			resp = append(resp, item{
-				ItemID:         i.ID.Hex(),
-				Name:           i.Name,
-				ProductID:      i.ProductID,
-				ProductVariant: i.ProductVariant,
-				Price:          ih.Price,
-				Stock:          ih.Stock,
-				ImageURL:       i.ImageURL,
-				MerchantName:   i.MerchantName,
-				Site:           i.Site,
+				ItemID: i.ID.Hex(),
+				Item:   i,
 			})
 		}
 

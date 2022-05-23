@@ -11,8 +11,11 @@ import (
 	"strings"
 )
 
+var ShopeeItemNotFoundErr = errors.New("Shopee item not found")
+
 type ShopeeItemResponse struct {
-	Data ShopeeItemResponseData `json:"data"`
+	Error int                     `json:"error"`
+	Data  *ShopeeItemResponseData `json:"data"`
 }
 
 type ShopeeItemResponseData struct {
@@ -31,7 +34,7 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	}
 	apiURL := fmt.Sprintf("https://shopee.co.id/api/v4/item/get?shopid=%s&itemid=%s", shopID, itemID)
 
-	req, err := newGetRequest(apiURL, nil)
+	req, err := newRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return ShopeeItemResponseData{}, errors.Wrapf(err, "error creating request from apiURL: %+v", apiURL)
 	}
@@ -45,7 +48,7 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Error("error closing response body", errors.Wrap(err, "error closing response body"))
+			c.Logger.Error("error closing response body", errors.Wrapf(err, "error closing response body on request to url: %s", req.URL))
 		}
 	}()
 
@@ -60,10 +63,14 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 			"error decoding ShopeeItemAPI response body, apiURL: %+v, body:\n%+v", apiURL, string(body))
 	}
 
+	if shopeeItemResp.Error != 0 || shopeeItemResp.Data == nil {
+		return ShopeeItemResponseData{}, ShopeeItemNotFoundErr
+	}
+
 	shopeeItemResp.Data.Price /= 100000
 	shopeeItemResp.Data.ImageURL = "https://cf.shopee.co.id/file/" + shopeeItemResp.Data.ImageURL
 
-	return shopeeItemResp.Data, nil
+	return *shopeeItemResp.Data, nil
 }
 
 func shopeeGetShopAndItemID(urlStr string) (shopID string, itemID string, ok bool) {

@@ -20,8 +20,8 @@ type userContext struct {
 	device database.Device
 }
 
-func (s Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (s Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		lt := r.Header.Get("Authorization")
 
 		if strings.HasPrefix(lt, "Bearer ") {
@@ -58,6 +58,8 @@ func (s Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 				err = bcrypt.CompareHashAndPassword(d.LoginToken.Token, tokenHash.Sum(nil))
 				if err != nil {
+					s.Logger.Debugf("authMiddleware: Error when comparing LoginToken hashes for UserID: %s, DeviceID: %s, err: %v",
+						u.ID.Hex(), d.DeviceID, err)
 					break
 				}
 
@@ -76,5 +78,5 @@ func (s Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-	}
+	})
 }

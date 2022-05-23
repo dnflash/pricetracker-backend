@@ -15,6 +15,7 @@ type Config struct {
 	LogInfoEnabled    bool
 	LogErrorEnabled   bool
 	AuthSecretKey     jwk.Key
+	FCMKey            string
 }
 
 type tomlConfig struct {
@@ -25,6 +26,7 @@ type tomlConfig struct {
 	LogInfoEnabled    bool   `toml:"log_info_enabled"`
 	LogErrorEnabled   bool   `toml:"log_error_enabled"`
 	AuthSecretKey     string `toml:"auth_secret_key"`
+	FCMKey            string `toml:"fcm_key"`
 }
 
 func GetConfig(path string) (*Config, error) {
@@ -62,6 +64,10 @@ func GetConfig(path string) (*Config, error) {
 		return nil, errors.Wrap(err, "failed to create key from auth_secret_key")
 	}
 
+	if tc.FCMKey == "" {
+		return nil, errors.New("fcm_key is not set")
+	}
+
 	return &Config{
 		ServerAddress:     tc.ServerAddress,
 		DatabaseURI:       tc.DatabaseURI,
@@ -70,5 +76,6 @@ func GetConfig(path string) (*Config, error) {
 		LogInfoEnabled:    tc.LogInfoEnabled,
 		LogErrorEnabled:   tc.LogErrorEnabled,
 		AuthSecretKey:     authSecretKey,
+		FCMKey:            tc.FCMKey,
 	}, nil
 }

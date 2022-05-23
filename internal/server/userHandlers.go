@@ -179,8 +179,8 @@ func (s Server) userLogout() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uc := r.Context().Value(userContextKey{}).(userContext)
 
-		if err := s.DB.UserDeviceRemove(r.Context(), uc.id, uc.device.DeviceID); err != nil {
-			s.Logger.Errorf("userLogout: Error removing Device, err: %+v", err)
+		if err := s.DB.UserDeviceTokensRemove(r.Context(), uc.id, uc.device.DeviceID); err != nil {
+			s.Logger.Errorf("userLogout: Error removing Device tokens, err: %+v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}

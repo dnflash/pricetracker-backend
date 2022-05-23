@@ -13,6 +13,7 @@ import (
 )
 
 func main() {
+	appContext := context.Background()
 	appLogger := logger.NewLogger(false, false, true)
 
 	config, err := configuration.GetConfig("config.toml")
@@ -26,13 +27,13 @@ func main() {
 	appLogger.Debugf("Configuration: %+v", *config)
 
 	appLogger.Info("Connecting to DB at", config.DatabaseURI)
-	dbConn, err := database.ConnectDB(config.DatabaseURI)
+	dbConn, err := database.ConnectDB(appContext, config.DatabaseURI)
 	if err != nil {
 		appLogger.Error("Error connecting to database:", err)
 		panic(err)
 	}
 	defer func() {
-		if err := dbConn.Disconnect(context.Background()); err != nil {
+		if err := dbConn.Disconnect(appContext); err != nil {
 			appLogger.Error("Error disconnecting from database:", err)
 		}
 	}()
@@ -41,13 +42,14 @@ func main() {
 		DB: database.Database{Database: dbConn.Database(database.Name)},
 		Client: client.Client{
 			Client: &http.Client{Timeout: 15 * time.Second},
+			FCMKey: config.FCMKey,
 			Logger: appLogger,
 		},
 		Logger:        appLogger,
 		AuthSecretKey: config.AuthSecretKey,
 	}
 
-	go srv.FetchDataInInterval(time.NewTicker(config.FetchDataInterval))
+	go srv.FetchDataInInterval(appContext, time.NewTicker(config.FetchDataInterval))
 
 	httpSrv := &http.Server{
 		Handler:      srv.Router(),
