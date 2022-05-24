@@ -57,12 +57,12 @@ func (s Server) userRegister() http.HandlerFunc {
 		_, err = s.DB.UserInsert(r.Context(), u)
 		if err != nil {
 			if mongo.IsDuplicateKeyError(err) {
-				s.Logger.Debugf("userRegister: Error duplicate key when inserting User, err: %+v", err)
+				s.Logger.Debugf("userRegister: Error duplicate key when inserting User, err: %v", err)
 				http.Error(w, "User with email: "+req.Email+" already exists", http.StatusBadRequest)
 				return
 			}
 
-			s.Logger.Errorf("userRegister: Error inserting User, err: %+v", err)
+			s.Logger.Errorf("userRegister: Error inserting User, err: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -91,21 +91,21 @@ func (s Server) userLogin() http.HandlerFunc {
 
 		u, err := s.DB.UserFindByEmail(r.Context(), req.Email)
 		if err != nil {
-			s.Logger.Debugf("userLogin: Error finding User, err: %+v", err)
+			s.Logger.Debugf("userLogin: Error finding User, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
 
 		err = bcrypt.CompareHashAndPassword(u.Password, []byte(req.Password))
 		if err != nil {
-			s.Logger.Debugf("userLogin: Error comparing hash and password for User with email: %s, err: %+v", u.Email, err)
+			s.Logger.Debugf("userLogin: Error comparing hash and password for User with email: %s, err: %v", u.Email, err)
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
 
 		lt, exp, err := s.createLoginToken(u.ID.Hex(), req.DeviceID)
 		if err != nil {
-			s.Logger.Errorf("userLogin: Error creating login token for User, err: %+v", err)
+			s.Logger.Errorf("userLogin: Error creating login token for User, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -114,7 +114,7 @@ func (s Server) userLogin() http.HandlerFunc {
 		tokenHash.Write([]byte(lt))
 		bcryptTokenHash, err := bcrypt.GenerateFromPassword(tokenHash.Sum(nil), bcrypt.DefaultCost-3)
 		if err != nil {
-			s.Logger.Errorf("userLogin: Error generating bcrypt from login token hash, err: %+v", err)
+			s.Logger.Errorf("userLogin: Error generating bcrypt from login token hash, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -137,12 +137,12 @@ func (s Server) userLogin() http.HandlerFunc {
 				FCMToken: req.FCMToken,
 			}); err != nil {
 				if mongo.IsDuplicateKeyError(err) {
-					s.Logger.Debugf("userLogin: Error duplicate key when adding Device to User, err: %+v", err)
+					s.Logger.Debugf("userLogin: Error duplicate key when adding Device to User, err: %v", err)
 					http.Error(w, "Invalid fcm_token", http.StatusBadRequest)
 					return
 				}
 
-				s.Logger.Errorf("userLogin: Error adding Device to User, err: %+v", err)
+				s.Logger.Errorf("userLogin: Error adding Device to User, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
@@ -157,12 +157,12 @@ func (s Server) userLogin() http.HandlerFunc {
 
 			if err = s.DB.UserDeviceUpdate(r.Context(), u.ID.Hex(), *device); err != nil {
 				if mongo.IsDuplicateKeyError(err) {
-					s.Logger.Debugf("userLogin: Error duplicate key when updating Device on User, err: %+v", err)
+					s.Logger.Debugf("userLogin: Error duplicate key when updating Device on User, err: %v", err)
 					http.Error(w, "Invalid fcm_token", http.StatusBadRequest)
 					return
 				}
 
-				s.Logger.Errorf("userLogin: Error updating Device on User, err: %+v", err)
+				s.Logger.Errorf("userLogin: Error updating Device on User, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
@@ -180,7 +180,7 @@ func (s Server) userLogout() http.HandlerFunc {
 		uc := r.Context().Value(userContextKey{}).(userContext)
 
 		if err := s.DB.UserDeviceTokensRemove(r.Context(), uc.id, uc.device.DeviceID); err != nil {
-			s.Logger.Errorf("userLogout: Error removing Device tokens, err: %+v", err)
+			s.Logger.Errorf("userLogout: Error removing Device tokens, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -210,12 +210,12 @@ func (s Server) userInfo() http.HandlerFunc {
 		if req.FCMToken != uc.device.FCMToken {
 			if err := s.DB.UserDeviceFCMTokenUpdate(r.Context(), uc.id, uc.device.DeviceID, req.FCMToken); err != nil {
 				if mongo.IsDuplicateKeyError(err) {
-					s.Logger.Debugf("userInfo: Error duplicate key when updating Device FCMToken, err: %+v", err)
+					s.Logger.Debugf("userInfo: Error duplicate key when updating Device FCMToken, err: %v", err)
 					http.Error(w, "Invalid fcm_token", http.StatusBadRequest)
 					return
 				}
 
-				s.Logger.Errorf("userInfo: Error updating Device FCMToken, err: %+v", err)
+				s.Logger.Errorf("userInfo: Error updating Device FCMToken, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}

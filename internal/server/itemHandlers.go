@@ -18,7 +18,8 @@ import (
 type siteType int
 
 const (
-	siteShopee siteType = iota
+	siteTypeInvalid siteType = iota
+	siteShopee
 	siteTokopedia
 	siteBlibli
 )
@@ -26,7 +27,7 @@ const (
 func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-		return -1, "", err
+		return siteTypeInvalid, "", err
 	}
 
 	cleanURL := "https://" + parsedURL.Host + parsedURL.Path
@@ -39,7 +40,7 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 		return siteBlibli, cleanURL, nil
 	}
 
-	return -1, "", errors.Errorf("invalid site url: %+v", cleanURL)
+	return siteTypeInvalid, "", errors.Errorf("invalid site url: %s", cleanURL)
 }
 
 func (s Server) itemAdd() http.HandlerFunc {
@@ -77,12 +78,12 @@ func (s Server) itemAdd() http.HandlerFunc {
 			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
 				if errors.Is(err, client.ShopeeItemNotFoundErr) {
-					s.Logger.Debugf("itemAdd: Item not found when getting Shopee item with url: %+v, err: %v", cleanURL, err)
+					s.Logger.Debugf("itemAdd: Item not found when getting Shopee item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 					return
 				}
 
-				s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %+v, err: %+v", cleanURL, err)
+				s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
@@ -101,14 +102,14 @@ func (s Server) itemAdd() http.HandlerFunc {
 
 			id, err := s.DB.ItemInsert(r.Context(), i)
 			if err != nil {
-				s.Logger.Errorf("itemAdd: Error inserting Item: %+v, err: %+v", i, err)
+				s.Logger.Errorf("itemAdd: Error inserting Item: %+v, err: %v", i, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
 			objID, err := primitive.ObjectIDFromHex(id)
 			if err != nil {
-				s.Logger.Errorf("itemAdd: Error creating ObjectID from hex string: %+v, err: %+v", id, err)
+				s.Logger.Errorf("itemAdd: Error creating ObjectID from hex string: %s, err: %v", id, err)
 			}
 
 			ih := database.ItemHistory{
@@ -118,7 +119,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 				Timestamp: primitive.NewDateTimeFromTime(time.Now()),
 			}
 			if err = s.DB.ItemHistoryInsert(r.Context(), ih); err != nil {
-				s.Logger.Errorf("itemAdd: Error inserting ItemHistory: %+v, err: %+v", ih, err)
+				s.Logger.Errorf("itemAdd: Error inserting ItemHistory: %+v, err: %v", ih, err)
 			}
 
 			ti := database.TrackedItem{
@@ -128,7 +129,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 				NotificationEnabled: req.NotificationEnabled,
 			}
 			if err = s.DB.UserTrackedItemUpdateOrAdd(r.Context(), uc.id, ti); err != nil {
-				s.Logger.Errorf("itemAdd: Error adding TrackedItem to User, err: %+v", err)
+				s.Logger.Errorf("itemAdd: Error adding TrackedItem to User, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
@@ -166,12 +167,12 @@ func (s Server) itemCheck() http.HandlerFunc {
 			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
 				if errors.Is(err, client.ShopeeItemNotFoundErr) {
-					s.Logger.Debugf("itemCheck: Item not found when getting Shopee item with url: %+v, err: %v", cleanURL, err)
+					s.Logger.Debugf("itemCheck: Item not found when getting Shopee item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 					return
 				}
 
-				s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %+v, err: %+v", cleanURL, err)
+				s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
@@ -254,7 +255,7 @@ func (s Server) itemGetAll() http.HandlerFunc {
 
 		is, err := s.DB.ItemsFind(r.Context(), itemIDs)
 		if err != nil {
-			s.Logger.Errorf("itemGetAll: Error getting all Item for User with ID: %s, err: %+v", uc.id, err)
+			s.Logger.Errorf("itemGetAll: Error getting all Item for User with ID: %s, err: %v", uc.id, err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -294,12 +295,12 @@ func (s Server) itemHistory() http.HandlerFunc {
 		id := mux.Vars(r)["itemID"]
 		objID, err := primitive.ObjectIDFromHex(id)
 		if err != nil {
-			s.Logger.Errorf("Error creating ObjectID from hex string: %+v, err: %+v", id, err)
+			s.Logger.Errorf("Error creating ObjectID from hex string: %s, err: %v", id, err)
 		}
 
 		ihs, err := s.DB.ItemHistoryFindRange(r.Context(), objID, req.Start, req.End)
 		if err != nil {
-			s.Logger.Errorf("Error getting ItemHistories, err: %+v", err)
+			s.Logger.Errorf("Error getting ItemHistories, err: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

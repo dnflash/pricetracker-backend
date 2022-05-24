@@ -26,7 +26,7 @@ func (db Database) ItemHistoryFindLatest(ctx context.Context, itemID primitive.O
 	var ih ItemHistory
 	opts := options.FindOne().SetSort(bson.M{"ts": -1})
 	err := db.Collection(CollectionItemHistories).FindOne(ctx, bson.M{"item_id": itemID}, opts).Decode(&ih)
-	return ih, errors.Wrapf(err, "error finding latest ItemHistory for ItemID: %+v", itemID)
+	return ih, errors.Wrapf(err, "error finding latest ItemHistory for ItemID: %s", itemID.Hex())
 }
 
 func (db Database) ItemHistoryFindRange(
@@ -43,13 +43,13 @@ func (db Database) ItemHistoryFindRange(
 	}, opts)
 	if err != nil {
 		return nil, errors.Wrapf(err,
-			"error getting cursor to find ItemHistory for ItemID: %+v, start: %+v, end: %+v",
-			itemID, start, end)
+			"error getting cursor to find ItemHistory for ItemID: %s, start: %s, end: %s",
+			itemID.Hex(), start.Format(time.RFC3339), end.Format(time.RFC3339))
 	}
 	if err = cur.All(ctx, &ihs); err != nil {
 		return nil, errors.Wrapf(err,
-			"error getting all ItemHistory from cursor for ItemID: %+v, start: %+v, end: %+v",
-			itemID, start, end)
+			"error getting all ItemHistory from cursor for ItemID: %s, start: %s, end: %s",
+			itemID.Hex(), start.Format(time.RFC3339), end.Format(time.RFC3339))
 	}
 	return ihs, nil
 }

@@ -30,13 +30,13 @@ type ShopeeItemResponseData struct {
 func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	shopID, itemID, ok := shopeeGetShopAndItemID(url)
 	if !ok {
-		return ShopeeItemResponseData{}, errors.Errorf("error getting ShopID and ItemID from URL: %+v", url)
+		return ShopeeItemResponseData{}, errors.Errorf("error getting ShopID and ItemID from URL: %s", url)
 	}
 	apiURL := fmt.Sprintf("https://shopee.co.id/api/v4/item/get?shopid=%s&itemid=%s", shopID, itemID)
 
 	req, err := newRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
-		return ShopeeItemResponseData{}, errors.Wrapf(err, "error creating request from apiURL: %+v", apiURL)
+		return ShopeeItemResponseData{}, errors.Wrapf(err, "error creating request from apiURL: %s", apiURL)
 	}
 	req.AddCookie(&http.Cookie{
 		Name:  "SPC_U",
@@ -56,11 +56,11 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	bodyReader := http.MaxBytesReader(nil, resp.Body, 300000)
 	body, err := io.ReadAll(bodyReader)
 	if err != nil {
-		return ShopeeItemResponseData{}, errors.Wrapf(err, "error reading ShopeeItemAPI response body, apiURL: %+v", apiURL)
+		return ShopeeItemResponseData{}, errors.Wrapf(err, "error reading ShopeeItemAPI response body, apiURL: %s", apiURL)
 	}
 	if err = json.NewDecoder(bytes.NewReader(body)).Decode(&shopeeItemResp); err != nil {
 		return ShopeeItemResponseData{}, errors.Wrapf(err,
-			"error decoding ShopeeItemAPI response body, apiURL: %+v, body:\n%+v", apiURL, string(body))
+			"error decoding ShopeeItemAPI response body, apiURL: %s, body:\n%+v", apiURL, string(body))
 	}
 
 	if shopeeItemResp.Error != 0 || shopeeItemResp.Data == nil {

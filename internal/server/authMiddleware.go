@@ -64,7 +64,7 @@ func (s Server) authMiddleware(next http.Handler) http.Handler {
 				}
 
 				if err = s.DB.UserDeviceLastSeenUpdate(r.Context(), u.ID.Hex(), d.DeviceID); err != nil {
-					s.Logger.Errorf("authMiddleware: Error updating Device LastSeen, err: %+v", err)
+					s.Logger.Errorf("authMiddleware: Error updating Device LastSeen, err: %v", err)
 				}
 
 				userCtx := userContext{

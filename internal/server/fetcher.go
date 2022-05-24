@@ -62,7 +62,7 @@ func (s Server) fetchData(ctx context.Context) {
 				var fcmTokens []string
 
 				for _, u := range us {
-					if shouldNotify(u.TrackedItems[0], shopeeItem.Price) {
+					if len(u.TrackedItems) > 0 && shouldNotify(u.TrackedItems[0], shopeeItem.Price, shopeeItem.Stock) {
 						notifiedUserIDs = append(notifiedUserIDs, u.ID)
 						for _, d := range u.Devices {
 							if d.FCMToken != "" {
@@ -83,7 +83,7 @@ func (s Server) fetchData(ctx context.Context) {
 					RegistrationIDs: fcmTokens,
 				}
 
-				s.Logger.Infof("fetchData: Sending notification to %d Users for ItemID: %s", len(notifiedUserIDs), i.ID.Hex())
+				s.Logger.Infof("fetchData: Sending notification to %d User(s) for ItemID: %s", len(notifiedUserIDs), i.ID.Hex())
 				s.Logger.Debugf("fetchData: FCMSendRequest for ItemID: %s, req: %+v", i.ID.Hex(), fcmReq)
 
 				fcmResp, err := s.Client.FCMSendNotification(fcmReq)
@@ -102,6 +102,7 @@ func (s Server) fetchData(ctx context.Context) {
 				updatedUserCount, err := s.DB.UserTrackedItemNotificationCountIncrement(ctx, notifiedUserIDs, i.ID)
 				if err != nil {
 					s.Logger.Errorf("fetchData: Error incrementing User TrackedItem Notification Counts, err: %v", err)
+					continue
 				}
 				if updatedUserCount != len(notifiedUserIDs) {
 					s.Logger.Errorf(
@@ -116,8 +117,9 @@ func (s Server) fetchData(ctx context.Context) {
 	s.Logger.Info("fetchData: Finished fetching all item data")
 }
 
-func shouldNotify(ti database.TrackedItem, itemPrice int) bool {
-	if ti.NotificationEnabled && ti.NotificationCount <= 5 && ti.PriceLowerBound >= itemPrice {
+func shouldNotify(ti database.TrackedItem, itemPrice int, itemStock int) bool {
+	if ti.NotificationEnabled && ti.NotificationCount <= 5 &&
+		itemPrice <= ti.PriceLowerBound && itemStock > 0 {
 		return true
 	}
 	return false
