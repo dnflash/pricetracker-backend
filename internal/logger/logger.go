@@ -2,8 +2,8 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"log"
-	"os"
 )
 
 type logger struct {
@@ -48,7 +48,7 @@ func (l *logger) Errorf(format string, v ...any) {
 	}
 }
 
-func NewLogger(debugEnabled bool, infoEnabled bool, errorEnabled bool) *logger {
+func NewLogger(debugEnabled bool, infoEnabled bool, errorEnabled bool, output io.Writer) *logger {
 	var (
 		debugLogger *log.Logger
 		infoLogger  *log.Logger
@@ -58,13 +58,13 @@ func NewLogger(debugEnabled bool, infoEnabled bool, errorEnabled bool) *logger {
 	flag := log.LstdFlags | log.Lshortfile
 
 	if debugEnabled {
-		debugLogger = log.New(os.Stdout, "DEBUG:", flag)
+		debugLogger = log.New(output, "DEBUG:", flag)
 	}
 	if infoEnabled {
-		infoLogger = log.New(os.Stdout, "INFO :", flag)
+		infoLogger = log.New(output, "INFO :", flag)
 	}
 	if errorEnabled {
-		errorLogger = log.New(os.Stderr, "ERROR:", flag)
+		errorLogger = log.New(output, "ERROR:", flag)
 	}
 
 	return &logger{

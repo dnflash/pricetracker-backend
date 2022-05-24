@@ -1,6 +1,7 @@
 package configuration
 
 import (
+	"encoding/json"
 	"github.com/BurntSushi/toml"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/pkg/errors"
@@ -8,23 +9,25 @@ import (
 )
 
 type Config struct {
-	ServerAddress     string
-	DatabaseURI       string
-	FetchDataInterval time.Duration
-	LogDebugEnabled   bool
-	LogInfoEnabled    bool
-	LogErrorEnabled   bool
-	AuthSecretKey     jwk.Key
-	FCMKey            string
+	ServerAddress     string        `json:"server_address"`
+	DatabaseURI       string        `json:"database_uri"`
+	FetchDataInterval time.Duration `json:"-"`
+	LogDebug          bool          `json:"log_debug"`
+	LogInfo           bool          `json:"log_info"`
+	LogError          bool          `json:"log_error"`
+	LogToFile         bool          `json:"log_to_file"`
+	AuthSecretKey     jwk.Key       `json:"-"`
+	FCMKey            string        `json:"-"`
 }
 
 type tomlConfig struct {
 	ServerAddress     string `toml:"server_address"`
 	DatabaseURI       string `toml:"database_uri"`
 	FetchDataInterval string `toml:"fetch_data_interval"`
-	LogDebugEnabled   bool   `toml:"log_debug_enabled"`
-	LogInfoEnabled    bool   `toml:"log_info_enabled"`
-	LogErrorEnabled   bool   `toml:"log_error_enabled"`
+	LogDebug          bool   `toml:"log_debug"`
+	LogInfo           bool   `toml:"log_info"`
+	LogError          bool   `toml:"log_error"`
+	LogToFile         bool   `toml:"log_to_file"`
 	AuthSecretKey     string `toml:"auth_secret_key"`
 	FCMKey            string `toml:"fcm_key"`
 }
@@ -72,10 +75,30 @@ func GetConfig(path string) (*Config, error) {
 		ServerAddress:     tc.ServerAddress,
 		DatabaseURI:       tc.DatabaseURI,
 		FetchDataInterval: fetchDataInterval,
-		LogDebugEnabled:   tc.LogDebugEnabled,
-		LogInfoEnabled:    tc.LogInfoEnabled,
-		LogErrorEnabled:   tc.LogErrorEnabled,
+		LogDebug:          tc.LogDebug,
+		LogInfo:           tc.LogInfo,
+		LogError:          tc.LogError,
+		LogToFile:         tc.LogToFile,
 		AuthSecretKey:     authSecretKey,
 		FCMKey:            tc.FCMKey,
 	}, nil
+}
+
+func (c Config) MarshalJSON() ([]byte, error) {
+	type localConfig Config
+	type myType struct {
+		FetchDataInterval string `json:"fetch_data_interval"`
+		AuthSecretKey     string `json:"auth_secret_key"`
+		FCMKey            string `json:"fcm_key"`
+		localConfig
+	}
+	mt := myType{localConfig: localConfig(c)}
+	mt.FetchDataInterval = c.FetchDataInterval.String()
+	if len(c.FCMKey) >= 21 {
+		mt.FCMKey = c.FCMKey[:21] + "..."
+	} else {
+		mt.FCMKey = c.FCMKey
+	}
+	mt.AuthSecretKey = "SET"
+	return json.Marshal(mt)
 }
