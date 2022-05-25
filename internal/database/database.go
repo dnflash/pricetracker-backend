@@ -66,7 +66,7 @@ func ConnectDB(ctx context.Context, dbURI string) (*mongo.Client, error) {
 			},
 			{
 				Keys:    bson.D{{Key: "devices.fcm_token", Value: 1}},
-				Options: options.Index().SetUnique(true),
+				Options: options.Index().SetUnique(true).SetSparse(true),
 			},
 		},
 	)
