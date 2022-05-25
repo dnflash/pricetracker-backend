@@ -45,7 +45,6 @@ type TrackedItem struct {
 
 func (db Database) UserInsert(ctx context.Context, u User) (id string, err error) {
 	u.TrackedItems = []TrackedItem{}
-	u.Devices = []Device{}
 	u.CreatedAt = primitive.NewDateTimeFromTime(time.Now())
 	u.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
 

@@ -22,9 +22,12 @@ func (s Server) userRegister() http.HandlerFunc {
 		Name     string `json:"name"`
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		DeviceID string `json:"device_id"`
+		FCMToken string `json:"fcm_token"`
 	}
 	type response struct {
-		Success bool `json:"success"`
+		Success    bool   `json:"success"`
+		LoginToken string `json:"login_token"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := &request{}
@@ -48,26 +51,71 @@ func (s Server) userRegister() http.HandlerFunc {
 			return
 		}
 
+		device := database.Device{
+			DeviceID:  req.DeviceID,
+			FCMToken:  req.FCMToken,
+			CreatedAt: primitive.NewDateTimeFromTime(time.Now()),
+		}
+
 		u := database.User{
 			Name:     req.Name,
 			Email:    req.Email,
 			Password: password,
+			Devices:  []database.Device{device},
 		}
 
-		_, err = s.DB.UserInsert(r.Context(), u)
+		id, err := s.DB.UserInsert(r.Context(), u)
 		if err != nil {
 			if mongo.IsDuplicateKeyError(err) {
 				s.Logger.Debugf("userRegister: Error duplicate key when inserting User, err: %v", err)
-				http.Error(w, "User with email: "+req.Email+" already exists", http.StatusBadRequest)
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 				return
 			}
 
 			s.Logger.Errorf("userRegister: Error inserting User, err: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 
-		s.writeJsonResponse(w, response{Success: true})
+		lt, exp, err := s.createLoginToken(id, req.DeviceID)
+		if err != nil {
+			s.Logger.Errorf("userRegister: Error creating login token for User, err: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		tokenHash := sha256.New()
+		tokenHash.Write([]byte(lt))
+		bcryptTokenHash, err := bcrypt.GenerateFromPassword(tokenHash.Sum(nil), bcrypt.DefaultCost-3)
+		if err != nil {
+			s.Logger.Errorf("userRegister: Error generating bcrypt from login token hash, err: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		device.LoginToken = database.LoginToken{
+			Token:      bcryptTokenHash,
+			Expiration: primitive.NewDateTimeFromTime(exp),
+			CreatedAt:  primitive.NewDateTimeFromTime(time.Now()),
+		}
+		device.LastSeen = primitive.NewDateTimeFromTime(time.Now())
+
+		if err = s.DB.UserDeviceUpdate(r.Context(), id, device); err != nil {
+			if mongo.IsDuplicateKeyError(err) {
+				s.Logger.Debugf("userRegister: Error duplicate key when updating Device on User, err: %v", err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+
+			s.Logger.Errorf("userRegister: Error updating Device on User, err: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		s.writeJsonResponse(w, response{
+			Success:    true,
+			LoginToken: lt,
+		})
 	}
 }
 
