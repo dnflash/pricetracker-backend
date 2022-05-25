@@ -36,14 +36,12 @@ func (s Server) userRegister() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
 		_, err := mail.ParseAddress(req.Email)
 		if err != nil {
 			s.Logger.Debug("userRegister: Invalid email, err:", err)
 			http.Error(w, "Invalid email", http.StatusBadRequest)
 			return
 		}
-
 		password, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
 			s.Logger.Error("userRegister: Error generating bcrypt from password, err:", err)
@@ -51,17 +49,16 @@ func (s Server) userRegister() http.HandlerFunc {
 			return
 		}
 
-		device := database.Device{
+		d := database.Device{
 			DeviceID:  req.DeviceID,
 			FCMToken:  req.FCMToken,
 			CreatedAt: primitive.NewDateTimeFromTime(time.Now()),
 		}
-
 		u := database.User{
 			Name:     req.Name,
 			Email:    req.Email,
 			Password: password,
-			Devices:  []database.Device{device},
+			Devices:  []database.Device{d},
 		}
 
 		id, err := s.DB.UserInsert(r.Context(), u)
@@ -71,47 +68,33 @@ func (s Server) userRegister() http.HandlerFunc {
 				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 				return
 			}
-
 			s.Logger.Errorf("userRegister: Error inserting User, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 
-		lt, exp, err := s.createLoginToken(id, req.DeviceID)
+		lt, exp, tokenHash, err := s.createLoginTokenAndHash(id, req.DeviceID)
 		if err != nil {
 			s.Logger.Errorf("userRegister: Error creating login token for User, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-
-		tokenHash := sha256.New()
-		tokenHash.Write([]byte(lt))
-		bcryptTokenHash, err := bcrypt.GenerateFromPassword(tokenHash.Sum(nil), bcrypt.DefaultCost-3)
-		if err != nil {
-			s.Logger.Errorf("userRegister: Error generating bcrypt from login token hash, err: %v", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-
-		device.LoginToken = database.LoginToken{
-			Token:      bcryptTokenHash,
+		d.LoginToken = database.LoginToken{
+			Token:      tokenHash,
 			Expiration: primitive.NewDateTimeFromTime(exp),
 			CreatedAt:  primitive.NewDateTimeFromTime(time.Now()),
 		}
-		device.LastSeen = primitive.NewDateTimeFromTime(time.Now())
-
-		if err = s.DB.UserDeviceUpdate(r.Context(), id, device); err != nil {
+		d.LastSeen = primitive.NewDateTimeFromTime(time.Now())
+		if err = s.DB.UserDeviceUpdate(r.Context(), id, d); err != nil {
 			if mongo.IsDuplicateKeyError(err) {
 				s.Logger.Debugf("userRegister: Error duplicate key when updating Device on User, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
-
 			s.Logger.Errorf("userRegister: Error updating Device on User, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-
 		s.writeJsonResponse(w, response{
 			Success:    true,
 			LoginToken: lt,
@@ -143,7 +126,6 @@ func (s Server) userLogin() http.HandlerFunc {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
-
 		err = bcrypt.CompareHashAndPassword(u.Password, []byte(req.Password))
 		if err != nil {
 			s.Logger.Debugf("userLogin: Error comparing hash and password for User with email: %s, err: %v", u.Email, err)
@@ -151,22 +133,12 @@ func (s Server) userLogin() http.HandlerFunc {
 			return
 		}
 
-		lt, exp, err := s.createLoginToken(u.ID.Hex(), req.DeviceID)
+		lt, exp, tokenHash, err := s.createLoginTokenAndHash(u.ID.Hex(), req.DeviceID)
 		if err != nil {
 			s.Logger.Errorf("userLogin: Error creating login token for User, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-
-		tokenHash := sha256.New()
-		tokenHash.Write([]byte(lt))
-		bcryptTokenHash, err := bcrypt.GenerateFromPassword(tokenHash.Sum(nil), bcrypt.DefaultCost-3)
-		if err != nil {
-			s.Logger.Errorf("userLogin: Error generating bcrypt from login token hash, err: %v", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-
 		var device *database.Device
 		for _, d := range u.Devices {
 			if d.DeviceID == req.DeviceID {
@@ -178,7 +150,7 @@ func (s Server) userLogin() http.HandlerFunc {
 			if err = s.DB.UserDeviceAdd(r.Context(), u.ID.Hex(), database.Device{
 				DeviceID: req.DeviceID,
 				LoginToken: database.LoginToken{
-					Token:      bcryptTokenHash,
+					Token:      tokenHash,
 					Expiration: primitive.NewDateTimeFromTime(exp),
 					CreatedAt:  primitive.NewDateTimeFromTime(time.Now()),
 				},
@@ -189,33 +161,29 @@ func (s Server) userLogin() http.HandlerFunc {
 					http.Error(w, "Invalid fcm_token", http.StatusBadRequest)
 					return
 				}
-
 				s.Logger.Errorf("userLogin: Error adding Device to User, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 		} else {
 			device.LoginToken = database.LoginToken{
-				Token:      bcryptTokenHash,
+				Token:      tokenHash,
 				Expiration: primitive.NewDateTimeFromTime(exp),
 				CreatedAt:  primitive.NewDateTimeFromTime(time.Now()),
 			}
 			device.FCMToken = req.FCMToken
 			device.LastSeen = primitive.NewDateTimeFromTime(time.Now())
-
 			if err = s.DB.UserDeviceUpdate(r.Context(), u.ID.Hex(), *device); err != nil {
 				if mongo.IsDuplicateKeyError(err) {
 					s.Logger.Debugf("userLogin: Error duplicate key when updating Device on User, err: %v", err)
 					http.Error(w, "Invalid fcm_token", http.StatusBadRequest)
 					return
 				}
-
 				s.Logger.Errorf("userLogin: Error updating Device on User, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 		}
-
 		s.writeJsonResponse(w, response{LoginToken: lt})
 	}
 }
@@ -226,13 +194,11 @@ func (s Server) userLogout() http.HandlerFunc {
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		uc := r.Context().Value(userContextKey{}).(userContext)
-
 		if err := s.DB.UserDeviceTokensRemove(r.Context(), uc.id, uc.device.DeviceID); err != nil {
 			s.Logger.Errorf("userLogout: Error removing Device tokens, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-
 		s.writeJsonResponse(w, response{Success: true})
 	}
 }
@@ -252,9 +218,7 @@ func (s Server) userInfo() http.HandlerFunc {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
-
 		uc := r.Context().Value(userContextKey{}).(userContext)
-
 		if req.FCMToken != uc.device.FCMToken {
 			if err := s.DB.UserDeviceFCMTokenUpdate(r.Context(), uc.id, uc.device.DeviceID, req.FCMToken); err != nil {
 				if mongo.IsDuplicateKeyError(err) {
@@ -262,29 +226,24 @@ func (s Server) userInfo() http.HandlerFunc {
 					http.Error(w, "Invalid fcm_token", http.StatusBadRequest)
 					return
 				}
-
 				s.Logger.Errorf("userInfo: Error updating Device FCMToken, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 		}
-
-		resp := response{
+		s.writeJsonResponse(w, response{
 			Name:  uc.name,
 			Email: uc.email,
-		}
-		s.writeJsonResponse(w, resp)
+		})
 	}
 }
 
-func (s Server) createLoginToken(userID string, deviceID string) (string, time.Time, error) {
+func (s Server) createLoginTokenAndHash(userID string, deviceID string) (string, time.Time, []byte, error) {
 	exp := time.Now().AddDate(0, 0, 90)
-
 	salt := make([]byte, 128)
 	if _, err := rand.Read(salt); err != nil {
-		return "", exp, errors.Wrapf(err, "error generating salt for login token for UserID: %s, DeviceID: %s", userID, deviceID)
+		return "", exp, nil, errors.Wrapf(err, "error generating salt for login token for UserID: %s, DeviceID: %s", userID, deviceID)
 	}
-
 	t, err := jwt.NewBuilder().
 		Subject(userID).
 		Issuer("price-tracker-app").
@@ -293,13 +252,17 @@ func (s Server) createLoginToken(userID string, deviceID string) (string, time.T
 		Claim("s", base64.StdEncoding.EncodeToString(salt)).
 		Build()
 	if err != nil {
-		return "", exp, errors.Wrapf(err, "error creating login token for UserID: %s, DeviceID: %s", userID, deviceID)
+		return "", exp, nil, errors.Wrapf(err, "error creating login token for UserID: %s, DeviceID: %s", userID, deviceID)
 	}
-
 	lt, err := jwt.Sign(t, jwt.WithKey(jwa.HS256, s.AuthSecretKey))
 	if err != nil {
-		return "", exp, errors.Wrapf(err, "error signing login token for UserID: %s, DeviceID: %s", userID, deviceID)
+		return "", exp, nil, errors.Wrapf(err, "error signing login token for UserID: %s, DeviceID: %s", userID, deviceID)
 	}
-
-	return string(lt), t.Expiration(), nil
+	tokenHash := sha256.New()
+	tokenHash.Write(lt)
+	bcryptTokenHash, err := bcrypt.GenerateFromPassword(tokenHash.Sum(nil), bcrypt.DefaultCost-3)
+	if err != nil {
+		return "", exp, nil, errors.Wrapf(err, "error generating bcrypt from login token hash for UserID: %s, DeviceID: %s", userID, deviceID)
+	}
+	return string(lt), t.Expiration(), bcryptTokenHash, nil
 }
