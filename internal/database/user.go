@@ -35,12 +35,12 @@ type LoginToken struct {
 }
 
 type TrackedItem struct {
-	ItemID              primitive.ObjectID `bson:"item_id"`
-	PriceLowerBound     int                `bson:"price_lower_bound"`
-	NotificationCount   int                `bson:"notification_count"`
-	NotificationEnabled bool               `bson:"notification_enabled"`
-	CreatedAt           primitive.DateTime `bson:"created_at"`
-	UpdatedAt           primitive.DateTime `bson:"updated_at"`
+	ItemID              primitive.ObjectID `bson:"item_id" json:"-"`
+	PriceLowerBound     int                `bson:"price_lower_bound" json:"price_lower_bound"`
+	NotificationCount   int                `bson:"notification_count" json:"notification_count"`
+	NotificationEnabled bool               `bson:"notification_enabled" json:"notification_enabled"`
+	CreatedAt           primitive.DateTime `bson:"created_at" json:"-"`
+	UpdatedAt           primitive.DateTime `bson:"updated_at" json:"-"`
 }
 
 func (db Database) UserInsert(ctx context.Context, u User) (id string, err error) {

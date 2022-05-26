@@ -71,14 +71,14 @@ func (db Database) ItemPriceAndStockUpdate(ctx context.Context, itemID primitive
 	return nil
 }
 
-func (db Database) ItemFindOne(ctx context.Context, id string) (Item, error) {
+func (db Database) ItemFindOne(ctx context.Context, itemID string) (Item, error) {
 	var i Item
-	objID, err := primitive.ObjectIDFromHex(id)
+	objID, err := primitive.ObjectIDFromHex(itemID)
 	if err != nil {
-		return i, errors.Wrapf(err, "error generating ObjectID from hex: %s", id)
+		return i, errors.Wrapf(err, "error generating ObjectID from hex: %s", itemID)
 	}
 	err = db.Collection(CollectionItems).FindOne(ctx, bson.M{"_id": objID}).Decode(&i)
-	return i, errors.Wrapf(err, "error finding Item with ID: %s", id)
+	return i, errors.Wrapf(err, "error finding Item with ID: %s", itemID)
 }
 
 func (db Database) ItemsFind(ctx context.Context, itemIDs []primitive.ObjectID) ([]Item, error) {

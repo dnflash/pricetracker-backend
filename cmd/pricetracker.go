@@ -43,6 +43,11 @@ func runApp() error {
 			appLogger.Error("Error opening log file:", err)
 			return err
 		}
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				appLogger.Error("Error closing log file:", err)
+			}
+		}()
 		logOutput = io.MultiWriter(logOutput, logFile)
 	}
 	appLogger = logger.NewLogger(config.LogDebug, config.LogInfo, config.LogError, logOutput)

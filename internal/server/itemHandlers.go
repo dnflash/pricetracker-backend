@@ -63,7 +63,8 @@ func (s Server) itemAdd() http.HandlerFunc {
 
 		req := &request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			s.Logger.Debug("itemAdd: Error decoding JSON, err:", err)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
@@ -77,7 +78,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 		case siteShopee:
 			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				if errors.Is(err, client.ShopeeItemNotFoundErr) {
+				if errors.Is(err, client.ErrShopeeItemNotFound) {
 					s.Logger.Debugf("itemAdd: Item not found when getting Shopee item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 					return
@@ -133,7 +134,6 @@ func (s Server) itemAdd() http.HandlerFunc {
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
-
 			s.writeJsonResponse(w, response{
 				ItemID: id,
 				Item:   i,
@@ -152,7 +152,8 @@ func (s Server) itemCheck() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := &request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			s.Logger.Debug("itemCheck: Error decoding JSON, err:", err)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
@@ -166,7 +167,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 		case siteShopee:
 			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				if errors.Is(err, client.ShopeeItemNotFoundErr) {
+				if errors.Is(err, client.ErrShopeeItemNotFound) {
 					s.Logger.Debugf("itemCheck: Item not found when getting Shopee item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 					return
@@ -188,7 +189,6 @@ func (s Server) itemCheck() http.HandlerFunc {
 				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
 				Site:           "Shopee",
 			}
-
 			s.writeJsonResponse(w, response{i})
 		}
 	}
@@ -197,42 +197,63 @@ func (s Server) itemCheck() http.HandlerFunc {
 func (s Server) itemGetOne() http.HandlerFunc {
 	type response struct {
 		ItemID string `json:"item_id"`
-		database.Item
+		database.TrackedItem
+		Item database.Item `json:"item"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		id := mux.Vars(r)["itemID"]
-		if id == "" {
+		uc, ok := r.Context().Value(userContextKey{}).(userContext)
+		if !ok {
+			s.Logger.Error("itemGetOne: Error getting userContext")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		u, err := s.DB.UserFindByID(r.Context(), uc.id)
+		if err != nil {
+			s.Logger.Error("itemGetOne: Error finding User with ID: %s", uc.id)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		itemID := mux.Vars(r)["itemID"]
+		if itemID == "" {
 			s.Logger.Debugf("itemGetOne: itemID not supplied")
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			return
 		}
-
-		i, err := s.DB.ItemFindOne(r.Context(), id)
+		i, err := s.DB.ItemFindOne(r.Context(), itemID)
 		if err != nil {
-			if errors.Is(err, mongo.ErrNoDocuments) {
-				s.Logger.Debugf("itemGetOne: No documents found for Item with ID: %s, err: %v", id, err)
+			if errors.Is(err, mongo.ErrNoDocuments) || errors.Is(err, primitive.ErrInvalidHex) {
+				s.Logger.Debugf("itemGetOne: No documents found for Item with ID: %s, err: %v", itemID, err)
 				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 				return
 			} else {
-				s.Logger.Errorf("itemGetOne: Error finding Item with ID: %s, err: %v", id, err)
+				s.Logger.Errorf("itemGetOne: Error finding Item with ID: %s, err: %v", itemID, err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 		}
 
-		s.writeJsonResponse(w, response{
+		resp := response{
 			ItemID: i.ID.Hex(),
 			Item:   i,
-		})
+		}
+		for _, ti := range u.TrackedItems {
+			if ti.ItemID == i.ID {
+				resp.TrackedItem = ti
+				break
+			}
+		}
+		s.writeJsonResponse(w, resp)
 	}
 }
 
 func (s Server) itemGetAll() http.HandlerFunc {
-	type item struct {
+	type userItem struct {
 		ItemID string `json:"item_id"`
-		database.Item
+		database.TrackedItem
+		Item database.Item `json:"item"`
 	}
-	type response []item
+	type response []userItem
 	return func(w http.ResponseWriter, r *http.Request) {
 		uc, ok := r.Context().Value(userContextKey{}).(userContext)
 		if !ok {
@@ -240,7 +261,6 @@ func (s Server) itemGetAll() http.HandlerFunc {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-
 		u, err := s.DB.UserFindByID(r.Context(), uc.id)
 		if err != nil {
 			s.Logger.Error("itemGetAll: Error finding User with ID: %s", uc.id)
@@ -248,26 +268,36 @@ func (s Server) itemGetAll() http.HandlerFunc {
 			return
 		}
 
-		itemIDs := []primitive.ObjectID{}
+		var itemIDs []primitive.ObjectID
 		for _, ti := range u.TrackedItems {
 			itemIDs = append(itemIDs, ti.ItemID)
 		}
 
+		resp := response{}
+		if len(itemIDs) == 0 {
+			s.writeJsonResponse(w, resp)
+			return
+		}
 		is, err := s.DB.ItemsFind(r.Context(), itemIDs)
 		if err != nil {
 			s.Logger.Errorf("itemGetAll: Error getting all Item for User with ID: %s, err: %v", uc.id, err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-
-		resp := response{}
-		for _, i := range is {
-			resp = append(resp, item{
-				ItemID: i.ID.Hex(),
-				Item:   i,
+		for _, ti := range u.TrackedItems {
+			var item database.Item
+			for _, i := range is {
+				if i.ID == ti.ItemID {
+					item = i
+					break
+				}
+			}
+			resp = append(resp, userItem{
+				ItemID:      ti.ItemID.Hex(),
+				TrackedItem: ti,
+				Item:        item,
 			})
 		}
-
 		s.writeJsonResponse(w, resp)
 	}
 }
@@ -277,43 +307,38 @@ func (s Server) itemHistory() http.HandlerFunc {
 		Start time.Time `json:"start"`
 		End   time.Time `json:"end"`
 	}
-
-	type itemHistory struct {
-		Price     int       `json:"pr"`
-		Stock     int       `json:"st"`
-		Timestamp time.Time `json:"ts"`
-	}
-	type response []itemHistory
-
+	type response []database.ItemHistory
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := &request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			s.Logger.Debug("itemHistory: Error decoding JSON, err:", err)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
-		id := mux.Vars(r)["itemID"]
-		objID, err := primitive.ObjectIDFromHex(id)
-		if err != nil {
-			s.Logger.Errorf("Error creating ObjectID from hex string: %s, err: %v", id, err)
-		}
-
-		ihs, err := s.DB.ItemHistoryFindRange(r.Context(), objID, req.Start, req.End)
-		if err != nil {
-			s.Logger.Errorf("Error getting ItemHistories, err: %v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		itemID := mux.Vars(r)["itemID"]
+		if itemID == "" {
+			s.Logger.Debugf("itemHistory: itemID not supplied")
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			return
 		}
-
-		resp := response{}
-		for _, ih := range ihs {
-			resp = append(resp, itemHistory{
-				Price:     ih.Price,
-				Stock:     ih.Stock,
-				Timestamp: ih.Timestamp.Time().UTC(),
-			})
+		ihs, err := s.DB.ItemHistoryFindRange(r.Context(), itemID, req.Start, req.End)
+		if err != nil {
+			if errors.Is(err, primitive.ErrInvalidHex) {
+				s.Logger.Debugf("itemHistory: itemID invalid, err: %v", err)
+				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+				return
+			} else {
+				s.Logger.Errorf("itemHistory: Error getting ItemHistories, err: %v", err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
 		}
-
-		s.writeJsonResponse(w, resp)
+		if len(ihs) == 0 {
+			s.Logger.Debugf("itemHistory: No ItemHistories found for ItemID: %s", itemID)
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
+		s.writeJsonResponse(w, response(ihs))
 	}
 }

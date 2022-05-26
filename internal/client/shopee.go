@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var ShopeeItemNotFoundErr = errors.New("Shopee item not found")
+var ErrShopeeItemNotFound = errors.New("Shopee item not found")
 
 type ShopeeItemResponse struct {
 	Error int                     `json:"error"`
@@ -64,7 +64,7 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	}
 
 	if shopeeItemResp.Error != 0 || shopeeItemResp.Data == nil {
-		return ShopeeItemResponseData{}, ShopeeItemNotFoundErr
+		return ShopeeItemResponseData{}, ErrShopeeItemNotFound
 	}
 
 	shopeeItemResp.Data.Price /= 100000
