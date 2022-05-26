@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -17,6 +18,8 @@ const (
 type Database struct {
 	*mongo.Database
 }
+
+var ErrNoDocumentsModified = errors.New("no documents modified")
 
 func ConnectDB(ctx context.Context, dbURI string) (*mongo.Client, error) {
 	c, err := mongo.Connect(ctx, options.Client().ApplyURI(dbURI))

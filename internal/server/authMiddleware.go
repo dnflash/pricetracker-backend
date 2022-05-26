@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwt"
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"pricetracker/internal/database"
@@ -14,16 +15,21 @@ import (
 type userContextKey struct{}
 
 type userContext struct {
-	id     string
-	name   string
-	email  string
-	device database.Device
+	user     database.User
+	deviceID string
+}
+
+func getUserContext(ctx context.Context) (*userContext, error) {
+	uc, ok := ctx.Value(userContextKey{}).(userContext)
+	if !ok {
+		return nil, errors.New("failed to get userContext")
+	}
+	return &uc, nil
 }
 
 func (s Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		lt := r.Header.Get("Authorization")
-
 		if strings.HasPrefix(lt, "Bearer ") {
 			lt = strings.TrimPrefix(lt, "Bearer ")
 			token, err := jwt.Parse([]byte(lt), jwt.WithKey(jwa.HS256, s.AuthSecretKey), jwt.WithValidate(true))
@@ -68,10 +74,8 @@ func (s Server) authMiddleware(next http.Handler) http.Handler {
 				}
 
 				userCtx := userContext{
-					id:     u.ID.Hex(),
-					name:   u.Name,
-					email:  u.Email,
-					device: d,
+					user:     u,
+					deviceID: d.DeviceID,
 				}
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userContextKey{}, userCtx)))
 				return

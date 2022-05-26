@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/pkg/errors"
@@ -53,14 +52,13 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	}()
 
 	shopeeItemResp := ShopeeItemResponse{}
-	bodyReader := http.MaxBytesReader(nil, resp.Body, 300000)
-	body, err := io.ReadAll(bodyReader)
+	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
 		return ShopeeItemResponseData{}, errors.Wrapf(err, "error reading ShopeeItemAPI response body, apiURL: %s", apiURL)
 	}
-	if err = json.NewDecoder(bytes.NewReader(body)).Decode(&shopeeItemResp); err != nil {
+	if err = json.Unmarshal(body, &shopeeItemResp); err != nil {
 		return ShopeeItemResponseData{}, errors.Wrapf(err,
-			"error decoding ShopeeItemAPI response body, apiURL: %s, body:\n%+v", apiURL, string(body))
+			"error unmarshalling ShopeeItemAPI response body, apiURL: %s, body:\n%+v", apiURL, string(body))
 	}
 
 	if shopeeItemResp.Error != 0 || shopeeItemResp.Data == nil {

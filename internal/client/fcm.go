@@ -38,12 +38,12 @@ type FCMData struct {
 func (c Client) FCMSendNotification(fcmReqBody FCMSendRequest) (FCMSendResponse, error) {
 	reqBody, err := json.Marshal(fcmReqBody)
 	if err != nil {
-		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: FCMSendRequest JSON marshalling error, req: %#v", fcmReqBody)
+		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: FCMSendRequest JSON marshalling error, req: %+v", fcmReqBody)
 	}
 
 	req, err := newRequest(http.MethodPost, "https://fcm.googleapis.com/fcm/send", bytes.NewReader(reqBody))
 	if err != nil {
-		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: error creating HTTP request from body: %s", string(reqBody))
+		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: error creating HTTP request from body: %s", reqBody)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "key="+c.FCMKey)
@@ -59,16 +59,12 @@ func (c Client) FCMSendNotification(fcmReqBody FCMSendRequest) (FCMSendResponse,
 	}()
 
 	fcmSendResp := FCMSendResponse{}
-	bodyReader := http.MaxBytesReader(nil, resp.Body, 300000)
-	respBody, err := io.ReadAll(bodyReader)
+	respBody, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
-		return FCMSendResponse{}, errors.Wrapf(err,
-			"FCMSendNotification: error reading FCMSendAPI response body, req: %+v, response body:\n%+v", req, string(respBody))
+		return fcmSendResp, errors.Wrapf(err,
+			"FCMSendNotification: error reading FCMSendAPI response body, req: %+v, response body: %s", req, respBody)
 	}
-	if err = json.NewDecoder(bytes.NewReader(respBody)).Decode(&fcmSendResp); err != nil {
-		return FCMSendResponse{}, errors.Wrapf(err,
-			"FCMSendNotification: error decoding FCMSendAPI response body, req: %+v, response body:\n%+v", req, string(respBody))
-	}
-
-	return fcmSendResp, nil
+	err = json.Unmarshal(respBody, &fcmSendResp)
+	return fcmSendResp, errors.Wrapf(err,
+		"FCMSendNotification: error unmarshalling FCMSendAPI response body, req: %+v, response body: %s", req, respBody)
 }

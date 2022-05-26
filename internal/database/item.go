@@ -24,7 +24,7 @@ type Item struct {
 	UpdatedAt      primitive.DateTime `bson:"updated_at" json:"-"`
 }
 
-func (db Database) ItemInsert(ctx context.Context, i Item) (id string, err error) {
+func (db Database) ItemInsert(ctx context.Context, i Item) (id string, existing bool, err error) {
 	var existingI Item
 	err = db.Collection(CollectionItems).FindOne(
 		ctx,
@@ -40,14 +40,17 @@ func (db Database) ItemInsert(ctx context.Context, i Item) (id string, err error
 			i.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
 			r, err := db.Collection(CollectionItems).InsertOne(ctx, i)
 			if err != nil {
-				return "", errors.Wrapf(err, "error inserting Item: %+v", i)
+				return "", false, errors.Wrapf(err, "error inserting Item: %+v", i)
 			}
-			return r.InsertedID.(primitive.ObjectID).Hex(), nil
+			return r.InsertedID.(primitive.ObjectID).Hex(), false, nil
 		} else {
-			return "", errors.Wrapf(err, "error trying to find existing Item: %+v", i)
+			return "", false, errors.Wrapf(err, "error trying to find existing Item: %+v", i)
 		}
 	}
-	return existingI.ID.Hex(), nil
+	if existingI.Price != i.Price || existingI.Stock != i.Stock {
+		err = db.ItemPriceAndStockUpdate(ctx, existingI.ID, i.Price, i.Stock)
+	}
+	return existingI.ID.Hex(), true, err
 }
 
 func (db Database) ItemPriceAndStockUpdate(ctx context.Context, itemID primitive.ObjectID, price int, stock int) error {

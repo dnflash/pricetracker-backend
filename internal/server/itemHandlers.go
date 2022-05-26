@@ -29,9 +29,7 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 	if err != nil {
 		return siteTypeInvalid, "", err
 	}
-
 	cleanURL := "https://" + parsedURL.Host + parsedURL.Path
-
 	if parsedURL.Host == "shopee.co.id" {
 		return siteShopee, cleanURL, nil
 	} else if parsedURL.Host == "www.tokopedia.com" {
@@ -39,7 +37,6 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 	} else if parsedURL.Host == "www.blibli.com" {
 		return siteBlibli, cleanURL, nil
 	}
-
 	return siteTypeInvalid, "", errors.Errorf("invalid site url: %s", cleanURL)
 }
 
@@ -54,16 +51,16 @@ func (s Server) itemAdd() http.HandlerFunc {
 		database.Item
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		uc, ok := r.Context().Value(userContextKey{}).(userContext)
-		if !ok {
-			s.Logger.Error("itemAdd: Error getting userContext")
+		uc, err := getUserContext(r.Context())
+		if err != nil {
+			s.Logger.Errorf("itemAdd: Error getting userContext, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 
-		req := &request{}
+		req := request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			s.Logger.Debug("itemAdd: Error decoding JSON, err:", err)
+			s.Logger.Debugf("itemAdd: Error decoding JSON, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
@@ -73,7 +70,6 @@ func (s Server) itemAdd() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
 		switch siteType {
 		case siteShopee:
 			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
@@ -83,7 +79,6 @@ func (s Server) itemAdd() http.HandlerFunc {
 					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 					return
 				}
-
 				s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
@@ -101,43 +96,54 @@ func (s Server) itemAdd() http.HandlerFunc {
 				Site:           "Shopee",
 			}
 
-			id, err := s.DB.ItemInsert(r.Context(), i)
+			itemID, existing, err := s.DB.ItemInsert(r.Context(), i)
 			if err != nil {
-				s.Logger.Errorf("itemAdd: Error inserting Item: %+v, err: %v", i, err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				s.Logger.Errorf("itemAdd: Error inserting Item, err: %v", err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 
-			objID, err := primitive.ObjectIDFromHex(id)
+			itemOID, err := primitive.ObjectIDFromHex(itemID)
 			if err != nil {
-				s.Logger.Errorf("itemAdd: Error creating ObjectID from hex string: %s, err: %v", id, err)
+				s.Logger.Errorf("itemAdd: Error creating ObjectID from hex string: %s, err: %v", itemID, err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
 			}
 
-			ih := database.ItemHistory{
-				ItemID:    objID,
-				Price:     shopeeItem.Price,
-				Stock:     shopeeItem.Stock,
-				Timestamp: primitive.NewDateTimeFromTime(time.Now()),
+			if !existing {
+				ih := database.ItemHistory{
+					ItemID:    itemOID,
+					Price:     shopeeItem.Price,
+					Stock:     shopeeItem.Stock,
+					Timestamp: primitive.NewDateTimeFromTime(time.Now()),
+				}
+				if err = s.DB.ItemHistoryInsert(r.Context(), ih); err != nil {
+					s.Logger.Errorf("itemAdd: Error inserting ItemHistory, err: %v", err)
+				}
 			}
-			if err = s.DB.ItemHistoryInsert(r.Context(), ih); err != nil {
-				s.Logger.Errorf("itemAdd: Error inserting ItemHistory: %+v, err: %v", ih, err)
+
+			if len(uc.user.TrackedItems) >= 25 && !itemTracked(itemID, uc.user.TrackedItems) {
+				s.Logger.Debugf("itemAdd: Failed to add item, TrackedItems are limited to 25 for each User, UserID: %s, ItemID: %s",
+					uc.user.ID.Hex(), itemID)
+				http.Error(w, http.StatusText(http.StatusUnprocessableEntity), http.StatusUnprocessableEntity)
+				return
 			}
 
 			ti := database.TrackedItem{
-				ItemID:              objID,
+				ItemID:              itemOID,
 				PriceLowerBound:     req.PriceLowerBound,
 				NotificationCount:   0,
 				NotificationEnabled: req.NotificationEnabled,
 			}
-			if err = s.DB.UserTrackedItemUpdateOrAdd(r.Context(), uc.id, ti); err != nil {
+			if err = s.DB.UserTrackedItemUpdateOrAdd(r.Context(), uc.user.ID.Hex(), ti); err != nil {
 				s.Logger.Errorf("itemAdd: Error adding TrackedItem to User, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 			s.writeJsonResponse(w, response{
-				ItemID: id,
+				ItemID: itemID,
 				Item:   i,
-			})
+			}, http.StatusCreated)
 		}
 	}
 }
@@ -150,9 +156,9 @@ func (s Server) itemCheck() http.HandlerFunc {
 		database.Item
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		req := &request{}
+		req := request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			s.Logger.Debug("itemCheck: Error decoding JSON, err:", err)
+			s.Logger.Debugf("itemCheck: Error decoding JSON, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
@@ -172,7 +178,6 @@ func (s Server) itemCheck() http.HandlerFunc {
 					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 					return
 				}
-
 				s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
@@ -189,9 +194,109 @@ func (s Server) itemCheck() http.HandlerFunc {
 				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
 				Site:           "Shopee",
 			}
-			s.writeJsonResponse(w, response{i})
+			s.writeJsonResponse(w, response{i}, http.StatusOK)
 		}
 	}
+}
+
+func (s Server) itemUpdate() http.HandlerFunc {
+	type request struct {
+		ItemID              string `json:"item_id"`
+		PriceLowerBound     int    `json:"price_lower_bound"`
+		NotificationEnabled bool   `json:"notification_enabled"`
+	}
+	type response struct {
+		Success bool `json:"success"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		uc, err := getUserContext(r.Context())
+		if err != nil {
+			s.Logger.Errorf("itemUpdate: Error getting userContext, err: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		req := request{}
+		if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.Logger.Debugf("itemUpdate: Error decoding JSON, err: %v", err)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+
+		if !itemTracked(req.ItemID, uc.user.TrackedItems) {
+			s.Logger.Debugf("itemUpdate: Item not tracked on User with ID: %s, ItemID: %s", uc.user.ID.Hex(), req.ItemID)
+			s.writeJsonResponse(w, response{Success: false}, http.StatusUnprocessableEntity)
+			return
+		}
+
+		itemOID, err := primitive.ObjectIDFromHex(req.ItemID)
+		if err != nil {
+			s.Logger.Debugf("itemUpdate: error generating ObjectID from hex: %s, err: %v", req.ItemID, err)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		ti := database.TrackedItem{
+			ItemID:              itemOID,
+			PriceLowerBound:     req.PriceLowerBound,
+			NotificationEnabled: req.NotificationEnabled,
+			NotificationCount:   0,
+		}
+		if err = s.DB.UserTrackedItemUpdateOrAdd(r.Context(), uc.user.ID.Hex(), ti); err != nil {
+			s.Logger.Errorf("itemUpdate: Error updating TrackedItem for User with ID: %s, TrackedItem: %+v, err: %v", uc.user.ID.Hex(), ti, err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		s.writeJsonResponse(w, response{Success: true}, http.StatusOK)
+	}
+}
+
+func (s Server) itemRemove() http.HandlerFunc {
+	type request struct {
+		ItemID string `json:"item_id"`
+	}
+	type response struct {
+		Success bool `json:"success"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		uc, err := getUserContext(r.Context())
+		if err != nil {
+			s.Logger.Errorf("itemRemove: Error getting userContext, err: %v", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		req := request{}
+		if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.Logger.Debugf("itemRemove: Error decoding JSON, err: %v", err)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+
+		if !itemTracked(req.ItemID, uc.user.TrackedItems) {
+			s.Logger.Debugf("itemRemove: Item not tracked on User with ID: %s, ItemID: %s", uc.user.ID.Hex(), req.ItemID)
+			s.writeJsonResponse(w, response{Success: false}, http.StatusUnprocessableEntity)
+			return
+		}
+		if err = s.DB.UserTrackedItemRemove(r.Context(), uc.user.ID.Hex(), req.ItemID); err != nil {
+			s.Logger.Errorf("itemRemove: Error removing TrackedItem from User with ID: %s, ItemID: %s, err: %v", uc.user.ID.Hex(), req.ItemID, err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		s.writeJsonResponse(w, response{Success: true}, http.StatusOK)
+	}
+}
+
+func itemTracked(itemID string, tis []database.TrackedItem) bool {
+	itemOID, err := primitive.ObjectIDFromHex(itemID)
+	if err != nil {
+		return false
+	}
+	for _, ti := range tis {
+		if ti.ItemID == itemOID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s Server) itemGetOne() http.HandlerFunc {
@@ -201,15 +306,9 @@ func (s Server) itemGetOne() http.HandlerFunc {
 		Item database.Item `json:"item"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		uc, ok := r.Context().Value(userContextKey{}).(userContext)
-		if !ok {
-			s.Logger.Error("itemGetOne: Error getting userContext")
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-		u, err := s.DB.UserFindByID(r.Context(), uc.id)
+		uc, err := getUserContext(r.Context())
 		if err != nil {
-			s.Logger.Error("itemGetOne: Error finding User with ID: %s", uc.id)
+			s.Logger.Errorf("itemGetOne: Error getting userContext, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -237,13 +336,13 @@ func (s Server) itemGetOne() http.HandlerFunc {
 			ItemID: i.ID.Hex(),
 			Item:   i,
 		}
-		for _, ti := range u.TrackedItems {
+		for _, ti := range uc.user.TrackedItems {
 			if ti.ItemID == i.ID {
 				resp.TrackedItem = ti
 				break
 			}
 		}
-		s.writeJsonResponse(w, resp)
+		s.writeJsonResponse(w, resp, http.StatusOK)
 	}
 }
 
@@ -255,36 +354,30 @@ func (s Server) itemGetAll() http.HandlerFunc {
 	}
 	type response []userItem
 	return func(w http.ResponseWriter, r *http.Request) {
-		uc, ok := r.Context().Value(userContextKey{}).(userContext)
-		if !ok {
-			s.Logger.Error("itemGetAll: Error getting userContext")
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-		u, err := s.DB.UserFindByID(r.Context(), uc.id)
+		uc, err := getUserContext(r.Context())
 		if err != nil {
-			s.Logger.Error("itemGetAll: Error finding User with ID: %s", uc.id)
+			s.Logger.Errorf("itemGetAll: Error getting userContext, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 
 		var itemIDs []primitive.ObjectID
-		for _, ti := range u.TrackedItems {
+		for _, ti := range uc.user.TrackedItems {
 			itemIDs = append(itemIDs, ti.ItemID)
 		}
 
 		resp := response{}
 		if len(itemIDs) == 0 {
-			s.writeJsonResponse(w, resp)
+			s.writeJsonResponse(w, resp, http.StatusOK)
 			return
 		}
 		is, err := s.DB.ItemsFind(r.Context(), itemIDs)
 		if err != nil {
-			s.Logger.Errorf("itemGetAll: Error getting all Item for User with ID: %s, err: %v", uc.id, err)
+			s.Logger.Errorf("itemGetAll: Error getting all Item for User with ID: %s, err: %v", uc.user.ID.Hex(), err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		for _, ti := range u.TrackedItems {
+		for _, ti := range uc.user.TrackedItems {
 			var item database.Item
 			for _, i := range is {
 				if i.ID == ti.ItemID {
@@ -298,7 +391,7 @@ func (s Server) itemGetAll() http.HandlerFunc {
 				Item:        item,
 			})
 		}
-		s.writeJsonResponse(w, resp)
+		s.writeJsonResponse(w, resp, http.StatusOK)
 	}
 }
 
@@ -309,16 +402,16 @@ func (s Server) itemHistory() http.HandlerFunc {
 	}
 	type response []database.ItemHistory
 	return func(w http.ResponseWriter, r *http.Request) {
-		req := &request{}
+		req := request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			s.Logger.Debug("itemHistory: Error decoding JSON, err:", err)
+			s.Logger.Debugf("itemHistory: Error decoding JSON, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
 		itemID := mux.Vars(r)["itemID"]
 		if itemID == "" {
-			s.Logger.Debugf("itemHistory: itemID not supplied")
+			s.Logger.Debug("itemHistory: itemID not supplied")
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			return
 		}
@@ -339,6 +432,6 @@ func (s Server) itemHistory() http.HandlerFunc {
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			return
 		}
-		s.writeJsonResponse(w, response(ihs))
+		s.writeJsonResponse(w, response(ihs), http.StatusOK)
 	}
 }
