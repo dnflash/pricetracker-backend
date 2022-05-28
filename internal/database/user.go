@@ -36,7 +36,7 @@ type LoginToken struct {
 
 type TrackedItem struct {
 	ItemID                 primitive.ObjectID `bson:"item_id" json:"-"`
-	PriceLowerBound        int                `bson:"price_lower_bound" json:"price_lower_bound"`
+	PriceLowerThreshold    int                `bson:"price_lower_threshold" json:"price_lower_threshold"`
 	NotificationEnabled    bool               `bson:"notification_enabled" json:"notification_enabled"`
 	NotificationCount      int                `bson:"notification_count" json:"notification_count"`
 	NotificationCountTotal int                `bson:"notification_count_total" json:"notification_count_total"`
@@ -97,11 +97,11 @@ func (db Database) UserTrackedItemUpdateOrAdd(ctx context.Context, userID string
 		ctx,
 		bson.M{"_id": objID, "tracked_items.item_id": ti.ItemID},
 		bson.M{"$set": bson.M{
-			"tracked_items.$.price_lower_bound":    ti.PriceLowerBound,
-			"tracked_items.$.notification_enabled": ti.NotificationEnabled,
-			"tracked_items.$.notification_count":   ti.NotificationCount,
-			"tracked_items.$.updated_at":           primitive.NewDateTimeFromTime(time.Now()),
-			"updated_at":                           primitive.NewDateTimeFromTime(time.Now()),
+			"tracked_items.$.price_lower_threshold": ti.PriceLowerThreshold,
+			"tracked_items.$.notification_enabled":  ti.NotificationEnabled,
+			"tracked_items.$.notification_count":    ti.NotificationCount,
+			"tracked_items.$.updated_at":            primitive.NewDateTimeFromTime(time.Now()),
+			"updated_at":                            primitive.NewDateTimeFromTime(time.Now()),
 		}},
 	)
 	if err != nil {

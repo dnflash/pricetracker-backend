@@ -54,8 +54,8 @@ func GetConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse fetch_data_interval: %s", path)
 	}
-	if fetchDataInterval < 15*time.Second {
-		return nil, errors.Errorf("fetch_data_interval too short (%v), minimum interval: 15s", fetchDataInterval)
+	if fetchDataInterval < 10*time.Second {
+		return nil, errors.Errorf("fetch_data_interval too short (%v), minimum interval: 10s", fetchDataInterval)
 	}
 
 	if tc.AuthSecretKey == "" {
@@ -94,7 +94,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	}
 	mt := myType{localConfig: localConfig(c)}
 	mt.FetchDataInterval = c.FetchDataInterval.String()
-	if len(c.FCMKey) >= 21 {
+	if len(c.FCMKey) > 21 {
 		mt.FCMKey = c.FCMKey[:21] + "..."
 	} else {
 		mt.FCMKey = c.FCMKey

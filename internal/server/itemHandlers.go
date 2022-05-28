@@ -43,7 +43,7 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 func (s Server) itemAdd() http.HandlerFunc {
 	type request struct {
 		URL                 string `json:"url"`
-		PriceLowerBound     int    `json:"price_lower_bound"`
+		PriceLowerThreshold int    `json:"price_lower_threshold"`
 		NotificationEnabled bool   `json:"notification_enabled"`
 	}
 	type response struct {
@@ -131,7 +131,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 
 			ti := database.TrackedItem{
 				ItemID:              itemOID,
-				PriceLowerBound:     req.PriceLowerBound,
+				PriceLowerThreshold: req.PriceLowerThreshold,
 				NotificationCount:   0,
 				NotificationEnabled: req.NotificationEnabled,
 			}
@@ -202,7 +202,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 func (s Server) itemUpdate() http.HandlerFunc {
 	type request struct {
 		ItemID              string `json:"item_id"`
-		PriceLowerBound     int    `json:"price_lower_bound"`
+		PriceLowerThreshold int    `json:"price_lower_threshold"`
 		NotificationEnabled bool   `json:"notification_enabled"`
 	}
 	type response struct {
@@ -237,7 +237,7 @@ func (s Server) itemUpdate() http.HandlerFunc {
 		}
 		ti := database.TrackedItem{
 			ItemID:              itemOID,
-			PriceLowerBound:     req.PriceLowerBound,
+			PriceLowerThreshold: req.PriceLowerThreshold,
 			NotificationEnabled: req.NotificationEnabled,
 			NotificationCount:   0,
 		}

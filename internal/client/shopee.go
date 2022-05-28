@@ -47,7 +47,7 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Error("error closing response body", errors.Wrapf(err, "error closing response body on request to url: %s", req.URL))
+			c.Logger.Error("ShopeeGetItem: Error closing response body on request to url: %s, err: %v", req.URL, err)
 		}
 	}()
 

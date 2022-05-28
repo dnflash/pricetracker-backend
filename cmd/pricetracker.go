@@ -64,12 +64,12 @@ func runApp() error {
 	appLogger.Info("Connecting to DB at", config.DatabaseURI)
 	dbConn, err := database.ConnectDB(appContext, config.DatabaseURI)
 	if err != nil {
-		appLogger.Error("Error connecting to database:", err)
+		appLogger.Error("Error connecting to DB:", err)
 		return err
 	}
 	defer func() {
 		if err := dbConn.Disconnect(appContext); err != nil {
-			appLogger.Error("Error disconnecting from database:", err)
+			appLogger.Error("Error disconnecting from DB:", err)
 		}
 	}()
 
