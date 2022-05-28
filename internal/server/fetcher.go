@@ -63,12 +63,13 @@ func (s Server) fetchData(ctx context.Context) {
 				if err = s.DB.ItemPriceAndStockUpdate(ctx, i.ID, shopeeItem.Price, shopeeItem.Stock); err != nil {
 					s.Logger.Errorf("fetchData: Error updating Item Price and Stock, err: %v", err)
 				}
+			}
 
+			if shopeeItem.Price != i.Price {
 				if shopeeItem.Stock == 0 {
 					s.Logger.Debugf("fetchData: Stock is 0 for Item: %s, ID: %s, will not notify Users", itemName, i.ID.Hex())
 					continue
 				}
-
 				s.Logger.Debugf("fetchData: Finding Users that tracked Item: %s, ID: %s", itemName, i.ID.Hex())
 				us, err := s.DB.UserDeviceFCMTokensFindByTrackedItem(ctx, i.ID)
 				if err != nil {
@@ -135,7 +136,7 @@ func (s Server) fetchData(ctx context.Context) {
 					)
 				}
 			} else {
-				s.Logger.Debugf("fetchData: No change on price and stock for Item: %s, ID: %s, will not notify Users", itemName, i.ID.Hex())
+				s.Logger.Debugf("fetchData: No changes on price for Item: %s, ID: %s, will not notify Users", itemName, i.ID.Hex())
 				continue
 			}
 		}
