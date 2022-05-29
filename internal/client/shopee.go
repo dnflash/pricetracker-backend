@@ -67,11 +67,11 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 			"error unmarshalling ShopeeItemAPI response body, apiURL: %s, body: %s", apiURL, body)
 	}
 
-	if shopeeItemResp.ActionType != 0 {
-		return ShopeeItemResponseData{}, errors.Wrapf(ErrShopeeItem, "error getting data from ShopeeItemAPI, resp: %s", body)
-	}
-	if shopeeItemResp.Error == 4 || shopeeItemResp.Data == nil {
+	if shopeeItemResp.Error == 4 {
 		return ShopeeItemResponseData{}, errors.Wrapf(ErrShopeeItemNotFound, "Shopee item not found, resp: %s", body)
+	}
+	if shopeeItemResp.ActionType != 0 || shopeeItemResp.Data == nil {
+		return ShopeeItemResponseData{}, errors.Wrapf(ErrShopeeItem, "error getting data from ShopeeItemAPI, resp: %s", body)
 	}
 
 	shopeeItemResp.Data.Price /= 100000
