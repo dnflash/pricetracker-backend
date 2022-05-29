@@ -74,14 +74,19 @@ func (s Server) itemAdd() http.HandlerFunc {
 		case siteShopee:
 			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				if errors.Is(err, client.ErrShopeeItemNotFound) {
+				if errors.Is(err, client.ErrShopeeItem) {
+					s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+					return
+				} else if errors.Is(err, client.ErrShopeeItemNotFound) {
 					s.Logger.Debugf("itemAdd: Item not found when getting Shopee item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 					return
+				} else {
+					s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
-				s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
 			}
 
 			i := database.Item{
@@ -173,14 +178,19 @@ func (s Server) itemCheck() http.HandlerFunc {
 		case siteShopee:
 			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				if errors.Is(err, client.ErrShopeeItemNotFound) {
+				if errors.Is(err, client.ErrShopeeItem) {
+					s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+					return
+				} else if errors.Is(err, client.ErrShopeeItemNotFound) {
 					s.Logger.Debugf("itemCheck: Item not found when getting Shopee item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 					return
+				} else {
+					s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
-				s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
 			}
 
 			i := database.Item{

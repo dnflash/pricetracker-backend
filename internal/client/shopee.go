@@ -10,11 +10,13 @@ import (
 	"strings"
 )
 
+var ErrShopeeItem = errors.New("failed getting Shopee item")
 var ErrShopeeItemNotFound = errors.New("Shopee item not found")
 
 type ShopeeItemResponse struct {
-	Error int                     `json:"error"`
-	Data  *ShopeeItemResponseData `json:"data"`
+	Error      int                     `json:"error"`
+	Data       *ShopeeItemResponseData `json:"data"`
+	ActionType int                     `json:"action_type"`
 }
 
 type ShopeeItemResponseData struct {
@@ -41,6 +43,10 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 		Name:  "SPC_U",
 		Value: "-",
 	})
+	req.AddCookie(&http.Cookie{
+		Name:  "SPC_F",
+		Value: "-",
+	})
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		return ShopeeItemResponseData{}, errors.Wrapf(err, "error doing request: %+v", req)
@@ -58,11 +64,14 @@ func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
 	}
 	if err = json.Unmarshal(body, &shopeeItemResp); err != nil {
 		return ShopeeItemResponseData{}, errors.Wrapf(err,
-			"error unmarshalling ShopeeItemAPI response body, apiURL: %s, body:\n%+v", apiURL, string(body))
+			"error unmarshalling ShopeeItemAPI response body, apiURL: %s, body: %s", apiURL, body)
 	}
 
-	if shopeeItemResp.Error != 0 || shopeeItemResp.Data == nil {
-		return ShopeeItemResponseData{}, ErrShopeeItemNotFound
+	if shopeeItemResp.ActionType != 0 {
+		return ShopeeItemResponseData{}, errors.Wrapf(ErrShopeeItem, "error getting data from ShopeeItemAPI, resp: %s", body)
+	}
+	if shopeeItemResp.Error == 4 || shopeeItemResp.Data == nil {
+		return ShopeeItemResponseData{}, errors.Wrapf(ErrShopeeItemNotFound, "Shopee item not found, resp: %s", body)
 	}
 
 	shopeeItemResp.Data.Price /= 100000
