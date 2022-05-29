@@ -143,7 +143,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 			s.writeJsonResponse(w, response{
 				ItemID: itemID,
 				Item:   i,
-			}, http.StatusCreated)
+			}, http.StatusOK)
 		}
 	}
 }
