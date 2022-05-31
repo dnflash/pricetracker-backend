@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -11,7 +10,6 @@ import (
 	"net/url"
 	"pricetracker/internal/client"
 	"pricetracker/internal/database"
-	"strconv"
 	"time"
 )
 
@@ -67,6 +65,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 
 		siteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
 		if err != nil {
+			s.Logger.Debugf("itemAdd: Bad url: %s, err: %v", req.URL, err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -89,19 +88,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 				}
 			}
 
-			i := database.Item{
-				URL:            fmt.Sprintf("https://shopee.co.id/product/%d/%d", shopeeItem.ShopID, shopeeItem.ItemID),
-				Name:           shopeeItem.Name,
-				ProductID:      strconv.Itoa(shopeeItem.ItemID),
-				ProductVariant: "-",
-				Price:          shopeeItem.Price,
-				Stock:          shopeeItem.Stock,
-				ImageURL:       shopeeItem.ImageURL,
-				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
-				Site:           "Shopee",
-			}
-
-			itemID, existing, err := s.DB.ItemInsert(r.Context(), i)
+			itemID, existing, err := s.DB.ItemInsert(r.Context(), shopeeItem)
 			if err != nil {
 				s.Logger.Errorf("itemAdd: Error inserting Item, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -147,7 +134,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 			}
 			s.writeJsonResponse(w, response{
 				ItemID: itemID,
-				Item:   i,
+				Item:   shopeeItem,
 			}, http.StatusOK)
 		}
 	}
@@ -170,6 +157,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 
 		siteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
 		if err != nil {
+			s.Logger.Debugf("itemCheck: Bad url: %s, err: %v", req.URL, err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -192,19 +180,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 					return
 				}
 			}
-
-			i := database.Item{
-				URL:            fmt.Sprintf("https://shopee.co.id/product/%d/%d", shopeeItem.ShopID, shopeeItem.ItemID),
-				Name:           shopeeItem.Name,
-				ProductID:      strconv.Itoa(shopeeItem.ItemID),
-				ProductVariant: "-",
-				Price:          shopeeItem.Price,
-				Stock:          shopeeItem.Stock,
-				ImageURL:       shopeeItem.ImageURL,
-				MerchantName:   strconv.Itoa(shopeeItem.ShopID),
-				Site:           "Shopee",
-			}
-			s.writeJsonResponse(w, response{i}, http.StatusOK)
+			s.writeJsonResponse(w, response{shopeeItem}, http.StatusOK)
 		}
 	}
 }

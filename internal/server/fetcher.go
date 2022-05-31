@@ -136,7 +136,7 @@ func (s Server) fetchData(ctx context.Context) {
 					)
 				}
 			} else {
-				s.Logger.Debugf("fetchData: No changes on price for Item: %s, ID: %s, will not notify Users", itemName, i.ID.Hex())
+				s.Logger.Infof("fetchData: No changes on price for Item: %s, ID: %s, will not notify Users", itemName, i.ID.Hex())
 				continue
 			}
 		}
