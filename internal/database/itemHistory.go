@@ -6,29 +6,22 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"pricetracker/internal/model"
 	"time"
 )
 
-type ItemHistory struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"-"`
-	ItemID    primitive.ObjectID `bson:"item_id" json:"-"`
-	Price     int                `bson:"pr" json:"pr"`
-	Stock     int                `bson:"st" json:"st"`
-	Timestamp primitive.DateTime `bson:"ts" json:"ts"`
-}
-
-func (db Database) ItemHistoryInsert(ctx context.Context, ih ItemHistory) (err error) {
+func (db Database) ItemHistoryInsert(ctx context.Context, ih model.ItemHistory) (err error) {
 	_, err = db.Collection(CollectionItemHistories).InsertOne(ctx, ih)
 	return errors.Wrapf(err, "error inserting ItemHistory: %+v", ih)
 }
 
 func (db Database) ItemHistoryFindRange(
-	ctx context.Context, itemID string, start time.Time, end time.Time) ([]ItemHistory, error) {
+	ctx context.Context, itemID string, start time.Time, end time.Time) ([]model.ItemHistory, error) {
 	itemOID, err := primitive.ObjectIDFromHex(itemID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error generating ObjectID from hex: %s", itemID)
 	}
-	var ihs []ItemHistory
+	var ihs []model.ItemHistory
 	cur, err := db.Collection(CollectionItemHistories).Find(ctx, bson.M{
 		"item_id": itemOID,
 		"ts": bson.M{

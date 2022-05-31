@@ -6,26 +6,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"pricetracker/internal/model"
 	"time"
 )
 
-type Item struct {
-	ID             primitive.ObjectID `bson:"_id,omitempty" json:"-"`
-	URL            string             `bson:"url" json:"url"`
-	Name           string             `bson:"name" json:"name"`
-	ProductID      string             `bson:"product_id" json:"product_id"`
-	ProductVariant string             `bson:"product_variant" json:"product_variant"`
-	Price          int                `bson:"price" json:"price"`
-	Stock          int                `bson:"stock" json:"stock"`
-	ImageURL       string             `bson:"image_url" json:"image_url"`
-	MerchantName   string             `bson:"merchant_name" json:"merchant_name"`
-	Site           string             `bson:"site" json:"site"`
-	CreatedAt      primitive.DateTime `bson:"created_at" json:"-"`
-	UpdatedAt      primitive.DateTime `bson:"updated_at" json:"-"`
-}
-
-func (db Database) ItemInsert(ctx context.Context, i Item) (id string, existing bool, err error) {
-	var existingI Item
+func (db Database) ItemInsert(ctx context.Context, i model.Item) (id string, existing bool, err error) {
+	var existingI model.Item
 	err = db.Collection(CollectionItems).FindOne(
 		ctx,
 		bson.M{
@@ -74,8 +60,8 @@ func (db Database) ItemPriceAndStockUpdate(ctx context.Context, itemID primitive
 	return nil
 }
 
-func (db Database) ItemFindOne(ctx context.Context, itemID string) (Item, error) {
-	var i Item
+func (db Database) ItemFindOne(ctx context.Context, itemID string) (model.Item, error) {
+	var i model.Item
 	objID, err := primitive.ObjectIDFromHex(itemID)
 	if err != nil {
 		return i, errors.Wrapf(err, "error generating ObjectID from hex: %s", itemID)
@@ -84,8 +70,8 @@ func (db Database) ItemFindOne(ctx context.Context, itemID string) (Item, error)
 	return i, errors.Wrapf(err, "error finding Item with ID: %s", itemID)
 }
 
-func (db Database) ItemsFind(ctx context.Context, itemIDs []primitive.ObjectID) ([]Item, error) {
-	var is []Item
+func (db Database) ItemsFind(ctx context.Context, itemIDs []primitive.ObjectID) ([]model.Item, error) {
+	var is []model.Item
 	cur, err := db.Collection(CollectionItems).Find(ctx, bson.M{"_id": bson.M{"$in": itemIDs}})
 	if err != nil {
 		return nil, errors.Wrapf(err, "error getting cursor to find Items, itemIDs: %v", itemIDs)
@@ -96,8 +82,8 @@ func (db Database) ItemsFind(ctx context.Context, itemIDs []primitive.ObjectID) 
 	return is, nil
 }
 
-func (db Database) ItemsFindAll(ctx context.Context) ([]Item, error) {
-	var is []Item
+func (db Database) ItemsFindAll(ctx context.Context) ([]model.Item, error) {
+	var is []model.Item
 	cur, err := db.Collection(CollectionItems).Find(ctx, bson.M{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "error getting cursor to find all Items")

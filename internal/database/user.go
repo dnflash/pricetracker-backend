@@ -6,47 +6,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"pricetracker/internal/model"
 	"time"
 )
 
-type User struct {
-	ID           primitive.ObjectID `bson:"_id,omitempty"`
-	Name         string             `bson:"name"`
-	Email        string             `bson:"email"`
-	Password     []byte             `bson:"password"`
-	Devices      []Device           `bson:"devices"`
-	TrackedItems []TrackedItem      `bson:"tracked_items"`
-	CreatedAt    primitive.DateTime `bson:"created_at"`
-	UpdatedAt    primitive.DateTime `bson:"updated_at"`
-}
-
-type Device struct {
-	DeviceID   string             `bson:"device_id"`
-	LoginToken LoginToken         `bson:"login_token"`
-	FCMToken   string             `bson:"fcm_token"`
-	LastSeen   primitive.DateTime `bson:"last_seen"`
-	CreatedAt  primitive.DateTime `bson:"created_at"`
-}
-
-type LoginToken struct {
-	Token      []byte             `bson:"token"`
-	Expiration primitive.DateTime `bson:"expiration"`
-	CreatedAt  primitive.DateTime `bson:"created_at"`
-}
-
-type TrackedItem struct {
-	ItemID                 primitive.ObjectID `bson:"item_id" json:"-"`
-	PriceLowerThreshold    int                `bson:"price_lower_threshold" json:"price_lower_threshold"`
-	NotificationEnabled    bool               `bson:"notification_enabled" json:"notification_enabled"`
-	NotificationCount      int                `bson:"notification_count" json:"notification_count"`
-	NotificationCountTotal int                `bson:"notification_count_total" json:"notification_count_total"`
-	LastNotifiedAt         primitive.DateTime `bson:"last_notified_at" json:"last_notified_at"`
-	CreatedAt              primitive.DateTime `bson:"created_at" json:"-"`
-	UpdatedAt              primitive.DateTime `bson:"updated_at" json:"-"`
-}
-
-func (db Database) UserInsert(ctx context.Context, u User) (id string, err error) {
-	u.TrackedItems = []TrackedItem{}
+func (db Database) UserInsert(ctx context.Context, u model.User) (id string, err error) {
+	u.TrackedItems = []model.TrackedItem{}
 	u.CreatedAt = primitive.NewDateTimeFromTime(time.Now())
 	u.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
 
@@ -57,14 +22,14 @@ func (db Database) UserInsert(ctx context.Context, u User) (id string, err error
 	return r.InsertedID.(primitive.ObjectID).Hex(), nil
 }
 
-func (db Database) UserFindByEmail(ctx context.Context, email string) (User, error) {
-	var u User
+func (db Database) UserFindByEmail(ctx context.Context, email string) (model.User, error) {
+	var u model.User
 	err := db.Collection(CollectionUsers).FindOne(ctx, bson.M{"email": email}).Decode(&u)
 	return u, errors.Wrapf(err, "error finding User with email: %s", email)
 }
 
-func (db Database) UserFindByID(ctx context.Context, id string) (User, error) {
-	var u User
+func (db Database) UserFindByID(ctx context.Context, id string) (model.User, error) {
+	var u model.User
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		return u, errors.Wrapf(err, "error creating ObjectID from hex: %s", id)
@@ -73,8 +38,8 @@ func (db Database) UserFindByID(ctx context.Context, id string) (User, error) {
 	return u, errors.Wrapf(err, "error finding User with ID: %s", id)
 }
 
-func (db Database) UserDeviceFCMTokensFindByTrackedItem(ctx context.Context, itemID primitive.ObjectID) ([]User, error) {
-	var us []User
+func (db Database) UserDeviceFCMTokensFindByTrackedItem(ctx context.Context, itemID primitive.ObjectID) ([]model.User, error) {
+	var us []model.User
 	cur, err := db.Collection(CollectionUsers).Find(ctx,
 		bson.M{"tracked_items.item_id": itemID},
 		options.Find().SetProjection(bson.M{"tracked_items.$": 1, "devices.fcm_token": 1}),
@@ -88,7 +53,7 @@ func (db Database) UserDeviceFCMTokensFindByTrackedItem(ctx context.Context, ite
 	return us, nil
 }
 
-func (db Database) UserTrackedItemUpdateOrAdd(ctx context.Context, userID string, ti TrackedItem) error {
+func (db Database) UserTrackedItemUpdateOrAdd(ctx context.Context, userID string, ti model.TrackedItem) error {
 	objID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return errors.Wrapf(err, "error creating ObjectID from hex: %s", userID)
@@ -113,7 +78,7 @@ func (db Database) UserTrackedItemUpdateOrAdd(ctx context.Context, userID string
 			bson.M{"_id": objID},
 			bson.M{"$push": bson.M{
 				"tracked_items": bson.M{
-					"$each": []TrackedItem{},
+					"$each": []model.TrackedItem{},
 					"$sort": bson.M{"updated_at": -1},
 				},
 			}},
@@ -129,7 +94,7 @@ func (db Database) UserTrackedItemUpdateOrAdd(ctx context.Context, userID string
 			bson.M{
 				"$push": bson.M{
 					"tracked_items": bson.M{
-						"$each":     []TrackedItem{ti},
+						"$each":     []model.TrackedItem{ti},
 						"$position": 0,
 						"$sort":     bson.M{"updated_at": -1},
 						"$slice":    25,
@@ -195,7 +160,7 @@ func (db Database) UserTrackedItemNotificationCountIncrement(
 	return int(res.ModifiedCount), nil
 }
 
-func (db Database) UserDeviceAdd(ctx context.Context, userID string, d Device) error {
+func (db Database) UserDeviceAdd(ctx context.Context, userID string, d model.Device) error {
 	objID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return errors.Wrapf(err, "error creating ObjectID from hex: %s", userID)
@@ -208,7 +173,7 @@ func (db Database) UserDeviceAdd(ctx context.Context, userID string, d Device) e
 		bson.M{
 			"$push": bson.M{
 				"devices": bson.M{
-					"$each":     []Device{d},
+					"$each":     []model.Device{d},
 					"$position": 0,
 					"$sort":     bson.M{"last_seen": -1},
 					"$slice":    5,
@@ -228,7 +193,7 @@ func (db Database) UserDeviceAdd(ctx context.Context, userID string, d Device) e
 	return nil
 }
 
-func (db Database) UserDeviceUpdate(ctx context.Context, userID string, d Device) error {
+func (db Database) UserDeviceUpdate(ctx context.Context, userID string, d model.Device) error {
 	objID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return errors.Wrapf(err, "error creating ObjectID from hex: %s", userID)

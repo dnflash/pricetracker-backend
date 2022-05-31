@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"pricetracker/internal/database"
+	"pricetracker/internal/model"
 	"strconv"
 	"strings"
 )
@@ -30,8 +30,8 @@ type ShopeeItemResponseData struct {
 	ImageURL string `json:"image"`
 }
 
-func (c Client) ShopeeGetItem(url string) (database.Item, error) {
-	var i database.Item
+func (c Client) ShopeeGetItem(url string) (model.Item, error) {
+	var i model.Item
 	shopID, itemID, ok := shopeeGetShopAndItemID(url)
 	if !ok {
 		return i, errors.Errorf("error getting ShopID and ItemID from URL: %s", url)
@@ -81,7 +81,7 @@ func (c Client) ShopeeGetItem(url string) (database.Item, error) {
 	shopeeItemResp.Data.ImageURL = "https://cf.shopee.co.id/file/" + shopeeItemResp.Data.ImageURL
 
 	shopeeItem := shopeeItemResp.Data
-	i = database.Item{
+	i = model.Item{
 		URL:            fmt.Sprintf("https://shopee.co.id/product/%d/%d", shopeeItem.ShopID, shopeeItem.ItemID),
 		Name:           shopeeItem.Name,
 		ProductID:      strconv.Itoa(shopeeItem.ItemID),

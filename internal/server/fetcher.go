@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"pricetracker/internal/client"
-	"pricetracker/internal/database"
+	"pricetracker/internal/model"
 	"time"
 )
 
@@ -48,7 +48,7 @@ func (s Server) fetchData(ctx context.Context) {
 			}
 
 			s.Logger.Debugf("fetchData: Inserting ItemHistory for Item: %s, ID: %s", itemName, i.ID.Hex())
-			ih := database.ItemHistory{
+			ih := model.ItemHistory{
 				ItemID:    i.ID,
 				Price:     shopeeItem.Price,
 				Stock:     shopeeItem.Stock,
@@ -144,7 +144,7 @@ func (s Server) fetchData(ctx context.Context) {
 	s.Logger.Info("fetchData: Finished fetching all Item data")
 }
 
-func shouldNotify(ti database.TrackedItem, itemPrice int, itemStock int) bool {
+func shouldNotify(ti model.TrackedItem, itemPrice int, itemStock int) bool {
 	if ti.NotificationEnabled &&
 		ti.NotificationCount < 5 &&
 		itemPrice <= ti.PriceLowerThreshold &&

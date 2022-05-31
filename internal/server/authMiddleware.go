@@ -8,14 +8,14 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
-	"pricetracker/internal/database"
+	"pricetracker/internal/model"
 	"strings"
 )
 
 type userContextKey struct{}
 
 type userContext struct {
-	user     database.User
+	user     model.User
 	deviceID string
 }
 

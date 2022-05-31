@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"pricetracker/internal/client"
-	"pricetracker/internal/database"
+	"pricetracker/internal/model"
 	"time"
 )
 
@@ -46,7 +46,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 	}
 	type response struct {
 		ItemID string `json:"item_id"`
-		database.Item
+		model.Item
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		uc, err := getUserContext(r.Context())
@@ -103,7 +103,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 			}
 
 			if !existing {
-				ih := database.ItemHistory{
+				ih := model.ItemHistory{
 					ItemID:    itemOID,
 					Price:     shopeeItem.Price,
 					Stock:     shopeeItem.Stock,
@@ -121,7 +121,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 				return
 			}
 
-			ti := database.TrackedItem{
+			ti := model.TrackedItem{
 				ItemID:              itemOID,
 				PriceLowerThreshold: req.PriceLowerThreshold,
 				NotificationCount:   0,
@@ -145,7 +145,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 		URL string `json:"url"`
 	}
 	type response struct {
-		database.Item
+		model.Item
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := request{}
@@ -221,7 +221,7 @@ func (s Server) itemUpdate() http.HandlerFunc {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
-		ti := database.TrackedItem{
+		ti := model.TrackedItem{
 			ItemID:              itemOID,
 			PriceLowerThreshold: req.PriceLowerThreshold,
 			NotificationEnabled: req.NotificationEnabled,
@@ -272,7 +272,7 @@ func (s Server) itemRemove() http.HandlerFunc {
 	}
 }
 
-func itemTracked(itemID string, tis []database.TrackedItem) bool {
+func itemTracked(itemID string, tis []model.TrackedItem) bool {
 	itemOID, err := primitive.ObjectIDFromHex(itemID)
 	if err != nil {
 		return false
@@ -288,8 +288,8 @@ func itemTracked(itemID string, tis []database.TrackedItem) bool {
 func (s Server) itemGetOne() http.HandlerFunc {
 	type response struct {
 		ItemID string `json:"item_id"`
-		database.TrackedItem
-		Item database.Item `json:"item"`
+		model.TrackedItem
+		Item model.Item `json:"item"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		uc, err := getUserContext(r.Context())
@@ -335,8 +335,8 @@ func (s Server) itemGetOne() http.HandlerFunc {
 func (s Server) itemGetAll() http.HandlerFunc {
 	type userItem struct {
 		ItemID string `json:"item_id"`
-		database.TrackedItem
-		Item database.Item `json:"item"`
+		model.TrackedItem
+		Item model.Item `json:"item"`
 	}
 	type response []userItem
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -364,7 +364,7 @@ func (s Server) itemGetAll() http.HandlerFunc {
 			return
 		}
 		for _, ti := range uc.user.TrackedItems {
-			var item database.Item
+			var item model.Item
 			for _, i := range is {
 				if i.ID == ti.ItemID {
 					item = i
@@ -386,7 +386,7 @@ func (s Server) itemHistory() http.HandlerFunc {
 		Start time.Time `json:"start"`
 		End   time.Time `json:"end"`
 	}
-	type response []database.ItemHistory
+	type response []model.ItemHistory
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

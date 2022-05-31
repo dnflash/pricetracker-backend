@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"net/mail"
-	"pricetracker/internal/database"
+	"pricetracker/internal/model"
 	"time"
 )
 
@@ -49,16 +49,16 @@ func (s Server) userRegister() http.HandlerFunc {
 			return
 		}
 
-		d := database.Device{
+		d := model.Device{
 			DeviceID:  req.DeviceID,
 			FCMToken:  req.FCMToken,
 			CreatedAt: primitive.NewDateTimeFromTime(time.Now()),
 		}
-		u := database.User{
+		u := model.User{
 			Name:     req.Name,
 			Email:    req.Email,
 			Password: password,
-			Devices:  []database.Device{d},
+			Devices:  []model.Device{d},
 		}
 
 		id, err := s.DB.UserInsert(r.Context(), u)
@@ -79,7 +79,7 @@ func (s Server) userRegister() http.HandlerFunc {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		d.LoginToken = database.LoginToken{
+		d.LoginToken = model.LoginToken{
 			Token:      tokenHash,
 			Expiration: primitive.NewDateTimeFromTime(exp),
 			CreatedAt:  primitive.NewDateTimeFromTime(time.Now()),
@@ -139,7 +139,7 @@ func (s Server) userLogin() http.HandlerFunc {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-		var device *database.Device
+		var device *model.Device
 		for _, d := range u.Devices {
 			if d.DeviceID == req.DeviceID {
 				device = &d
@@ -147,9 +147,9 @@ func (s Server) userLogin() http.HandlerFunc {
 			}
 		}
 		if device == nil {
-			if err = s.DB.UserDeviceAdd(r.Context(), u.ID.Hex(), database.Device{
+			if err = s.DB.UserDeviceAdd(r.Context(), u.ID.Hex(), model.Device{
 				DeviceID: req.DeviceID,
-				LoginToken: database.LoginToken{
+				LoginToken: model.LoginToken{
 					Token:      tokenHash,
 					Expiration: primitive.NewDateTimeFromTime(exp),
 					CreatedAt:  primitive.NewDateTimeFromTime(time.Now()),
@@ -166,7 +166,7 @@ func (s Server) userLogin() http.HandlerFunc {
 				return
 			}
 		} else {
-			device.LoginToken = database.LoginToken{
+			device.LoginToken = model.LoginToken{
 				Token:      tokenHash,
 				Expiration: primitive.NewDateTimeFromTime(exp),
 				CreatedAt:  primitive.NewDateTimeFromTime(time.Now()),
