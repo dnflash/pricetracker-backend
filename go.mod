@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/BurntSushi/toml v1.1.0
+	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/lestrrat-go/jwx/v2 v2.0.1
 	github.com/pkg/errors v0.9.1

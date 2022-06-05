@@ -1,0 +1,120 @@
+package server
+
+import (
+	"context"
+	"crypto/sha256"
+	"github.com/google/uuid"
+	"github.com/lestrrat-go/jwx/v2/jwa"
+	"github.com/lestrrat-go/jwx/v2/jwt"
+	"github.com/pkg/errors"
+	"golang.org/x/crypto/bcrypt"
+	"net/http"
+	"pricetracker/internal/model"
+	"strings"
+)
+
+type userContextKey struct{}
+type userContext struct {
+	user     model.User
+	deviceID string
+}
+
+type traceContextKey struct{}
+type traceContext struct {
+	traceID string
+}
+
+func setUserContext(ctx context.Context, uc userContext) context.Context {
+	return context.WithValue(ctx, userContextKey{}, uc)
+}
+func getUserContext(ctx context.Context) (userContext, error) {
+	uc, ok := ctx.Value(userContextKey{}).(userContext)
+	if !ok {
+		return uc, errors.New("failed to get userContext")
+	}
+	return uc, nil
+}
+
+func setTraceContext(ctx context.Context, tc traceContext) context.Context {
+	return context.WithValue(ctx, traceContextKey{}, tc)
+}
+func getTraceContext(ctx context.Context) (traceContext, error) {
+	tc, ok := ctx.Value(traceContextKey{}).(traceContext)
+	if !ok {
+		return tc, errors.New("failed to get traceContext")
+	}
+	return tc, nil
+}
+
+func (s Server) loggingMw(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceID := uuid.NewString()
+		s.Logger.Debugf("loggingMw: Incoming request %s %s from %s, UA: %s, TraceID: %s",
+			r.Method, r.URL, r.RemoteAddr, r.UserAgent(), traceID)
+
+		tc := traceContext{traceID: traceID}
+		next.ServeHTTP(w, r.WithContext(setTraceContext(r.Context(), tc)))
+	})
+}
+
+func (s Server) maxBytesMw(next http.Handler) http.Handler {
+	return http.MaxBytesHandler(next, 3000)
+}
+
+func (s Server) authMw(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lt := r.Header.Get("Authorization")
+		if strings.HasPrefix(lt, "Bearer ") {
+			lt = strings.TrimPrefix(lt, "Bearer ")
+			token, err := jwt.Parse([]byte(lt), jwt.WithKey(jwa.HS256, s.AuthSecretKey), jwt.WithValidate(true))
+			if err != nil {
+				s.Logger.Debugf("authMw: Failed to validate login token, err: %v", err)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				return
+			}
+
+			deviceID, _ := token.Get("device")
+			deviceIDStr, ok := deviceID.(string)
+			if !ok {
+				tokenMap, err := token.AsMap(r.Context())
+				s.Logger.Errorf("authMw: Valid token contains no device claim, token: %#v, Token.asMap err: %v", tokenMap, err)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				return
+			}
+
+			u, err := s.DB.UserFindByID(r.Context(), token.Subject())
+			if err != nil {
+				s.Logger.Debug("authMw: Error finding User from login token, err:", err)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				return
+			}
+
+			tokenHash := sha256.New()
+			tokenHash.Write([]byte(lt))
+			for _, d := range u.Devices {
+				if d.DeviceID != deviceIDStr {
+					continue
+				}
+
+				err = bcrypt.CompareHashAndPassword(d.LoginToken.Token, tokenHash.Sum(nil))
+				if err != nil {
+					s.Logger.Debugf("authMw: Error when comparing LoginToken hashes for UserID: %s, DeviceID: %s, err: %v",
+						u.ID.Hex(), d.DeviceID, err)
+					break
+				}
+
+				if err = s.DB.UserDeviceLastSeenUpdate(r.Context(), u.ID.Hex(), d.DeviceID); err != nil {
+					s.Logger.Errorf("authMw: Error updating Device LastSeen, err: %v", err)
+				}
+
+				uc := userContext{
+					user:     u,
+					deviceID: d.DeviceID,
+				}
+				next.ServeHTTP(w, r.WithContext(setUserContext(r.Context(), uc)))
+				return
+			}
+		}
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+	})
+}

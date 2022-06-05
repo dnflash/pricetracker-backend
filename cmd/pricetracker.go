@@ -86,11 +86,12 @@ func runApp() error {
 	go srv.FetchDataInInterval(appContext, time.NewTicker(config.FetchDataInterval))
 
 	httpSrv := &http.Server{
-		Handler:      srv.Router(),
-		Addr:         config.ServerAddress,
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
-		IdleTimeout:  15 * time.Second,
+		Handler:        srv.Router(),
+		Addr:           config.ServerAddress,
+		WriteTimeout:   15 * time.Second,
+		ReadTimeout:    15 * time.Second,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1024,
 	}
 
 	appLogger.Info("Serving on", httpSrv.Addr)
