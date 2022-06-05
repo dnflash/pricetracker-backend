@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"pricetracker/internal/model"
 	"strings"
+	"time"
 )
 
 type userContextKey struct{}
@@ -48,12 +49,16 @@ func getTraceContext(ctx context.Context) (traceContext, error) {
 
 func (s Server) loggingMw(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 		traceID := uuid.NewString()
 		s.Logger.Debugf("loggingMw: Incoming request %s %s from %s, UA: %s, TraceID: %s",
 			r.Method, r.URL, r.RemoteAddr, r.UserAgent(), traceID)
 
 		tc := traceContext{traceID: traceID}
 		next.ServeHTTP(w, r.WithContext(setTraceContext(r.Context(), tc)))
+
+		s.Logger.Debugf("loggingMw: Incoming request %s %s took %dms, TraceID: %s",
+			r.Method, r.URL, time.Now().Sub(start).Milliseconds(), traceID)
 	})
 }
 
