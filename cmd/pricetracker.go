@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	runApp()
+	_ = runApp()
 	time.Sleep(10 * time.Second)
 	os.Exit(1)
 }
@@ -23,7 +23,7 @@ func main() {
 func runApp() error {
 	appContext := context.Background()
 	logOutput := io.Writer(os.Stdout)
-	appLogger := logger.NewLogger(false, false, true, logOutput)
+	appLogger := logger.New(logger.LevelInfo, logOutput)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -50,16 +50,14 @@ func runApp() error {
 		}()
 		logOutput = io.MultiWriter(logOutput, logFile)
 	}
-	appLogger = logger.NewLogger(config.LogDebug, config.LogInfo, config.LogError, logOutput)
+	appLogger = logger.New(config.LogLevel, logOutput)
 
-	if config.LogDebug {
-		conf, err := json.MarshalIndent(config, "", "  ")
-		if err != nil {
-			appLogger.Error("Error marshalling Config to JSON:", err)
-			return err
-		}
-		appLogger.Debugf("Config:\n%s", conf)
+	conf, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		appLogger.Error("Error marshalling Config to JSON:", err)
+		return err
 	}
+	appLogger.Infof("Config:\n%s", conf)
 
 	appLogger.Info("Connecting to DB at", config.DatabaseURI)
 	dbConn, err := database.ConnectDB(appContext, config.DatabaseURI)

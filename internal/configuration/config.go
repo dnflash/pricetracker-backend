@@ -5,6 +5,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/pkg/errors"
+	"pricetracker/internal/logger"
 	"time"
 )
 
@@ -12,9 +13,7 @@ type Config struct {
 	ServerAddress     string        `json:"server_address"`
 	DatabaseURI       string        `json:"database_uri"`
 	FetchDataInterval time.Duration `json:"-"`
-	LogDebug          bool          `json:"log_debug"`
-	LogInfo           bool          `json:"log_info"`
-	LogError          bool          `json:"log_error"`
+	LogLevel          logger.Level  `json:"-"`
 	LogToFile         bool          `json:"log_to_file"`
 	AuthSecretKey     jwk.Key       `json:"-"`
 	FCMKey            string        `json:"-"`
@@ -24,9 +23,7 @@ type tomlConfig struct {
 	ServerAddress     string `toml:"server_address"`
 	DatabaseURI       string `toml:"database_uri"`
 	FetchDataInterval string `toml:"fetch_data_interval"`
-	LogDebug          bool   `toml:"log_debug"`
-	LogInfo           bool   `toml:"log_info"`
-	LogError          bool   `toml:"log_error"`
+	LogLevel          string `toml:"log_level"`
 	LogToFile         bool   `toml:"log_to_file"`
 	AuthSecretKey     string `toml:"auth_secret_key"`
 	FCMKey            string `toml:"fcm_key"`
@@ -52,10 +49,18 @@ func GetConfig(path string) (*Config, error) {
 	}
 	fetchDataInterval, err := time.ParseDuration(tc.FetchDataInterval)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse fetch_data_interval: %s", path)
+		return nil, errors.Wrapf(err, "failed to parse fetch_data_interval")
 	}
 	if fetchDataInterval < 10*time.Second {
 		return nil, errors.Errorf("fetch_data_interval too short (%v), minimum interval: 10s", fetchDataInterval)
+	}
+
+	if tc.LogLevel == "" {
+		return nil, errors.New("log_level is not set")
+	}
+	logLevel, err := logger.ParseLevel(tc.LogLevel)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse log_level")
 	}
 
 	if tc.AuthSecretKey == "" {
@@ -75,9 +80,7 @@ func GetConfig(path string) (*Config, error) {
 		ServerAddress:     tc.ServerAddress,
 		DatabaseURI:       tc.DatabaseURI,
 		FetchDataInterval: fetchDataInterval,
-		LogDebug:          tc.LogDebug,
-		LogInfo:           tc.LogInfo,
-		LogError:          tc.LogError,
+		LogLevel:          logLevel,
 		LogToFile:         tc.LogToFile,
 		AuthSecretKey:     authSecretKey,
 		FCMKey:            tc.FCMKey,
@@ -87,12 +90,14 @@ func GetConfig(path string) (*Config, error) {
 func (c Config) MarshalJSON() ([]byte, error) {
 	type localConfig Config
 	type myType struct {
+		localConfig
+		LogLevel          string `json:"log_level"`
 		FetchDataInterval string `json:"fetch_data_interval"`
 		AuthSecretKey     string `json:"auth_secret_key"`
 		FCMKey            string `json:"fcm_key"`
-		localConfig
 	}
 	mt := myType{localConfig: localConfig(c)}
+	mt.LogLevel = c.LogLevel.String()
 	mt.FetchDataInterval = c.FetchDataInterval.String()
 	if len(c.FCMKey) > 21 {
 		mt.FCMKey = c.FCMKey[:21] + "..."
