@@ -52,13 +52,13 @@ func (s Server) loggingMw(next http.Handler) http.Handler {
 		start := time.Now()
 		traceID := uuid.NewString()
 		s.Logger.Debugf("loggingMw: Incoming request %s %s from %s, UA: %s, TraceID: %s",
-			r.Method, r.URL, r.RemoteAddr, r.UserAgent(), traceID)
+			r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent(), traceID)
 
 		tc := traceContext{traceID: traceID}
 		next.ServeHTTP(w, r.WithContext(setTraceContext(r.Context(), tc)))
 
 		s.Logger.Debugf("loggingMw: Incoming request %s %s took %dms, TraceID: %s",
-			r.Method, r.URL, time.Now().Sub(start).Milliseconds(), traceID)
+			r.Method, r.URL.Path, time.Now().Sub(start).Milliseconds(), traceID)
 	})
 }
 

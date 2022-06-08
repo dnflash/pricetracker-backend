@@ -421,3 +421,26 @@ func (s Server) itemHistory() http.HandlerFunc {
 		s.writeJsonResponse(w, response(ihs), http.StatusOK)
 	}
 }
+
+func (s Server) itemSearch() http.HandlerFunc {
+	type response []model.Item
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("query")
+		if q == "" {
+			s.Logger.Debugf("itemSearch: \"query\" query parameter is not supplied")
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		is, err := s.Client.ShopeeSearch(q)
+		if err != nil {
+			s.Logger.Errorf("itemSearch: Error searching Shopee with query: %s, err: %v", q, err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		is = append([]model.Item{}, is...)
+		if len(is) > 3 {
+			is = is[:3]
+		}
+		s.writeJsonResponse(w, response(is), http.StatusOK)
+	}
+}

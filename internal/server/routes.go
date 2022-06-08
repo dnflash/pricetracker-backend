@@ -27,6 +27,7 @@ func (s Server) Router() *mux.Router {
 	itemAPI.HandleFunc("/update", s.itemUpdate()).Methods(http.MethodPost)
 	itemAPI.HandleFunc("/remove", s.itemRemove()).Methods(http.MethodPost)
 	itemAPI.HandleFunc("/check", s.itemCheck()).Methods(http.MethodPost)
+	itemAPI.HandleFunc("/search", s.itemSearch()).Methods(http.MethodGet)
 	itemAPI.HandleFunc("/get/{itemID}", s.itemGetOne()).Methods(http.MethodGet)
 	itemAPI.HandleFunc("/get", s.itemGetAll()).Methods(http.MethodGet)
 	itemAPI.HandleFunc("/history/{itemID}", s.itemHistory()).Methods(http.MethodPost)
