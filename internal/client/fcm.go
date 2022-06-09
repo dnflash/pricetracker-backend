@@ -62,9 +62,9 @@ func (c Client) FCMSendNotification(fcmReqBody FCMSendRequest) (FCMSendResponse,
 	respBody, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
 		return fcmSendResp, errors.Wrapf(err,
-			"FCMSendNotification: error reading FCMSendAPI response body, req: %+v, response body: %s", req, respBody)
+			"FCMSendNotification: error reading FCMSendAPI response body, req: %+v, status: %s, body: %s", req, resp.Status, respBody)
 	}
 	err = json.Unmarshal(respBody, &fcmSendResp)
 	return fcmSendResp, errors.Wrapf(err,
-		"FCMSendNotification: error unmarshalling FCMSendAPI response body, req: %+v, response body: %s", req, respBody)
+		"FCMSendNotification: error unmarshalling FCMSendAPI response body, req: %+v, status: %s, body: %s", req, resp.Status, respBody)
 }
