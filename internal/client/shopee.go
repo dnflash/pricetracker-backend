@@ -16,28 +16,35 @@ var ErrShopeeItem = errors.New("failed getting Shopee item")
 var ErrShopeeItemNotFound = errors.New("Shopee item not found")
 var ErrShopeeSearch = errors.New("failed searching Shopee")
 
-type ShopeeItemResponse struct {
+type shopeeItemResponse struct {
 	Error      int         `json:"error"`
-	Data       *ShopeeItem `json:"data"`
+	Data       *shopeeItem `json:"data"`
 	ActionType int         `json:"action_type"`
 }
 
-type ShopeeItem struct {
-	ShopID   int    `json:"shopid"`
-	ItemID   int    `json:"itemid"`
-	Name     string `json:"name"`
-	Price    int    `json:"price"`
-	Stock    int    `json:"stock"`
-	ImageURL string `json:"image"`
+type shopeeItem struct {
+	ShopID         int              `json:"shopid"`
+	ItemID         int              `json:"itemid"`
+	Name           string           `json:"name"`
+	Price          int              `json:"price"`
+	Stock          int              `json:"stock"`
+	Image          string           `json:"image"`
+	Description    string           `json:"description"`
+	HistoricalSold int              `json:"historical_sold"`
+	ItemRating     shopeeItemRating `json:"item_rating"`
 }
 
-type ShopeeSearchResponse struct {
+type shopeeItemRating struct {
+	RatingStar float64 `json:"rating_star"`
+}
+
+type shopeeSearchResponse struct {
 	NoMore bool               `json:"nomore"`
-	Items  []ShopeeSearchItem `json:"items"`
+	Items  []shopeeSearchItem `json:"items"`
 }
 
-type ShopeeSearchItem struct {
-	ItemBasic ShopeeItem `json:"item_basic"`
+type shopeeSearchItem struct {
+	ItemBasic shopeeItem `json:"item_basic"`
 	AdsID     int        `json:"adsid"`
 }
 
@@ -71,7 +78,7 @@ func (c Client) ShopeeGetItem(url string) (model.Item, error) {
 		}
 	}()
 
-	shopeeItemResp := ShopeeItemResponse{}
+	shopeeItemResp := shopeeItemResponse{}
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
 		return i, errors.Wrapf(err, "error reading ShopeeItemAPI response body, status: %s, body: %s", resp.Status, body)
@@ -140,7 +147,7 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 		}
 	}()
 
-	shopeeSearchResp := ShopeeSearchResponse{}
+	shopeeSearchResp := shopeeSearchResponse{}
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
 		return is, errors.Wrapf(err, "error reading ShopeeSearchAPI response body, status: %s, body: %s", resp.Status, body)
@@ -154,25 +161,30 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 		return is, errors.Wrapf(ErrShopeeSearch, "error getting data from ShopeeSearchAPI, status: %s, body: %s", resp.Status, body)
 	}
 
-	for _, shopeeSearchItem := range shopeeSearchResp.Items {
-		if shopeeSearchItem.AdsID != 0 {
+	for _, searchItem := range shopeeSearchResp.Items {
+		if searchItem.AdsID != 0 {
 			continue
 		}
-		is = append(is, shopeeSearchItem.ItemBasic.toItem())
+		is = append(is, searchItem.ItemBasic.toItem())
 	}
 	return is, nil
 }
 
-func (si ShopeeItem) toItem() model.Item {
+func (si shopeeItem) toItem() model.Item {
+	if len(si.Description) > 500 {
+		si.Description = si.Description[:500] + "..."
+	}
 	return model.Item{
-		URL:            fmt.Sprintf("https://shopee.co.id/product/%d/%d", si.ShopID, si.ItemID),
-		Name:           si.Name,
-		ProductID:      strconv.Itoa(si.ItemID),
-		ProductVariant: "-",
-		Price:          si.Price / 100000,
-		Stock:          si.Stock,
-		ImageURL:       "https://cf.shopee.co.id/file/" + si.ImageURL,
-		MerchantName:   strconv.Itoa(si.ShopID),
-		Site:           "Shopee",
+		Site:        "Shopee",
+		MerchantID:  strconv.Itoa(si.ShopID),
+		ProductID:   strconv.Itoa(si.ItemID),
+		URL:         fmt.Sprintf("https://shopee.co.id/product/%d/%d", si.ShopID, si.ItemID),
+		Name:        si.Name,
+		Price:       si.Price / 100000,
+		Stock:       si.Stock,
+		ImageURL:    "https://cf.shopee.co.id/file/" + si.Image,
+		Description: strings.ReplaceAll(si.Description, "\n", " "),
+		Rating:      si.ItemRating.RatingStar,
+		Sold:        si.HistoricalSold,
 	}
 }
