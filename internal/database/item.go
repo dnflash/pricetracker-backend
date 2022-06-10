@@ -5,59 +5,46 @@ import (
 	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 	"pricetracker/internal/model"
 	"time"
 )
 
-func (db Database) ItemInsert(ctx context.Context, i model.Item) (id string, existing bool, err error) {
-	var existingI model.Item
-	err = db.Collection(CollectionItems).FindOne(
-		ctx,
-		bson.M{
-			"site":            i.Site,
-			"product_id":      i.ProductID,
-			"product_variant": i.ProductVariant,
-		},
-	).Decode(&existingI)
+func (db Database) ItemInsert(ctx context.Context, i model.Item) (id string, err error) {
+	i.CreatedAt = primitive.NewDateTimeFromTime(time.Now())
+	i.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
+	r, err := db.Collection(CollectionItems).InsertOne(ctx, i)
 	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			i.CreatedAt = primitive.NewDateTimeFromTime(time.Now())
-			i.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
-			r, err := db.Collection(CollectionItems).InsertOne(ctx, i)
-			if err != nil {
-				return "", false, errors.Wrapf(err, "error inserting Item: %+v", i)
-			}
-			return r.InsertedID.(primitive.ObjectID).Hex(), false, nil
-		} else {
-			return "", false, errors.Wrapf(err, "error trying to find existing Item: %+v", i)
-		}
+		return "", errors.Wrapf(err, "error inserting Item: %+v", i)
 	}
-	if existingI.Price != i.Price || existingI.Stock != i.Stock {
-		err = db.ItemPriceAndStockUpdate(ctx, existingI.ID, i.Price, i.Stock)
-	}
-	return existingI.ID.Hex(), true, err
+	return r.InsertedID.(primitive.ObjectID).Hex(), nil
 }
 
-func (db Database) ItemPriceAndStockUpdate(ctx context.Context, itemID primitive.ObjectID, price int, stock int) error {
-	res, err := db.Collection(CollectionItems).UpdateOne(
-		ctx,
-		bson.M{"_id": itemID},
-		bson.M{"$set": bson.M{
-			"price":      price,
-			"stock":      stock,
-			"updated_at": primitive.NewDateTimeFromTime(time.Now()),
-		}},
-	)
+func (db Database) ItemUpdate(ctx context.Context, i model.Item) error {
+	if i.ID.IsZero() {
+		return errors.Errorf("Item ID is empty, Item: %+v", i)
+	}
+	i.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
+	res, err := db.Collection(CollectionItems).ReplaceOne(ctx, bson.M{"_id": i.ID}, i)
 	if err != nil {
-		return errors.Wrapf(err, "error when updating Item Stock and Price, ItemID: %s, Price: %d, Stock: %d",
-			itemID.Hex(), price, stock)
+		return errors.Wrapf(err, "error when updating Item: %+v", i)
 	}
 	if res.ModifiedCount == 0 {
-		return errors.Errorf("Item not modified when updating Item Stock and Price, ItemID: %s, Price: %d, Stock: %d",
-			itemID.Hex(), price, stock)
+		return errors.Errorf("Item not modified when updating Item: %+v", i)
 	}
 	return nil
+}
+
+func (db Database) ItemFindExisting(ctx context.Context, i model.Item) (model.Item, error) {
+	var existingI model.Item
+	err := db.Collection(CollectionItems).FindOne(
+		ctx,
+		bson.M{
+			"site":        i.Site,
+			"merchant_id": i.MerchantID,
+			"product_id":  i.ProductID,
+		},
+	).Decode(&existingI)
+	return existingI, errors.Wrapf(err, "error trying to find existing Item: %+v", i)
 }
 
 func (db Database) ItemFindOne(ctx context.Context, itemID string) (model.Item, error) {

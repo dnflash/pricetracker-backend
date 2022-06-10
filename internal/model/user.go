@@ -29,6 +29,7 @@ type LoginToken struct {
 
 type TrackedItem struct {
 	ItemID                 primitive.ObjectID `bson:"item_id" json:"-"`
+	PriceInitial           int                `bson:"price_initial" json:"price_initial"`
 	PriceLowerThreshold    int                `bson:"price_lower_threshold" json:"price_lower_threshold"`
 	NotificationEnabled    bool               `bson:"notification_enabled" json:"notification_enabled"`
 	NotificationCount      int                `bson:"notification_count" json:"notification_count"`

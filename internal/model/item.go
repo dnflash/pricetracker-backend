@@ -1,6 +1,9 @@
 package model
 
-import "go.mongodb.org/mongo-driver/bson/primitive"
+import (
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"time"
+)
 
 type Item struct {
 	ID                   primitive.ObjectID `bson:"_id,omitempty" json:"-"`
@@ -21,4 +24,24 @@ type Item struct {
 	Sold                 int                `bson:"sold" json:"sold"`
 	CreatedAt            primitive.DateTime `bson:"created_at" json:"-"`
 	UpdatedAt            primitive.DateTime `bson:"updated_at" json:"-"`
+}
+
+func (i *Item) UpdateWith(new Item) {
+	if i.Price != new.Price {
+		i.PriceHistoryPrevious = i.Price
+		i.Price = new.Price
+		i.PriceLastChangedAt = primitive.NewDateTimeFromTime(time.Now())
+		if i.PriceHistoryHighest < new.Price {
+			i.PriceHistoryHighest = new.Price
+		}
+		if i.PriceHistoryLowest > new.Price {
+			i.PriceHistoryLowest = new.Price
+		}
+	}
+	i.Stock = new.Stock
+	i.ImageURL = new.ImageURL
+	i.Description = new.Description
+	i.Rating = new.Rating
+	i.Sold = new.Sold
+	i.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
 }

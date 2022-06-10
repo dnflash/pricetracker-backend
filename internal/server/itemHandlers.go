@@ -46,7 +46,8 @@ func (s Server) itemAdd() http.HandlerFunc {
 	}
 	type response struct {
 		ItemID string `json:"item_id"`
-		model.Item
+		model.TrackedItem
+		Item model.Item `json:"item"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		uc, err := getUserContext(r.Context())
@@ -69,9 +70,10 @@ func (s Server) itemAdd() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		var ecommerceItem model.Item
 		switch siteType {
 		case siteShopee:
-			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
+			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
 				if errors.Is(err, client.ErrShopeeItem) {
 					s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
@@ -87,56 +89,78 @@ func (s Server) itemAdd() http.HandlerFunc {
 					return
 				}
 			}
-
-			itemID, existing, err := s.DB.ItemInsert(r.Context(), shopeeItem)
-			if err != nil {
-				s.Logger.Errorf("itemAdd: Error inserting Item, err: %v", err)
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
-			}
-
-			itemOID, err := primitive.ObjectIDFromHex(itemID)
-			if err != nil {
-				s.Logger.Errorf("itemAdd: Error creating ObjectID from hex string: %s, err: %v", itemID, err)
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
-			}
-
-			if !existing {
+		}
+		i, err := s.DB.ItemFindExisting(r.Context(), ecommerceItem)
+		if err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				i = ecommerceItem
+				i.PriceHistoryHighest = i.Price
+				i.PriceHistoryLowest = i.Price
+				itemID, err := s.DB.ItemInsert(r.Context(), i)
+				if err != nil {
+					s.Logger.Errorf("itemAdd: Error inserting Item, err: %v", err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
+				}
+				i.ID, err = primitive.ObjectIDFromHex(itemID)
+				if err != nil {
+					s.Logger.Errorf("itemAdd: Error creating ObjectID from hex: %s, err: %v", itemID, err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
+				}
 				ih := model.ItemHistory{
-					ItemID:    itemOID,
-					Price:     shopeeItem.Price,
-					Stock:     shopeeItem.Stock,
+					ItemID:    i.ID,
+					Price:     i.Price,
+					Stock:     i.Stock,
 					Timestamp: primitive.NewDateTimeFromTime(time.Now()),
 				}
 				if err = s.DB.ItemHistoryInsert(r.Context(), ih); err != nil {
 					s.Logger.Errorf("itemAdd: Error inserting ItemHistory, err: %v", err)
 				}
-			}
-
-			if len(uc.user.TrackedItems) >= 25 && !itemTracked(itemID, uc.user.TrackedItems) {
-				s.Logger.Debugf("itemAdd: Failed to add item, TrackedItems are limited to 25 for each User, UserID: %s, ItemID: %s",
-					uc.user.ID.Hex(), itemID)
-				http.Error(w, http.StatusText(http.StatusUnprocessableEntity), http.StatusUnprocessableEntity)
+			} else {
+				s.Logger.Errorf("itemAdd: Error finding existing Item, err: %v", err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
-
-			ti := model.TrackedItem{
-				ItemID:              itemOID,
-				PriceLowerThreshold: req.PriceLowerThreshold,
-				NotificationCount:   0,
-				NotificationEnabled: req.NotificationEnabled,
+		} else {
+			i.UpdateWith(ecommerceItem)
+			if err = s.DB.ItemUpdate(r.Context(), i); err != nil {
+				s.Logger.Errorf("itemAdd: Error updating existing Item, err: %v", err)
 			}
-			if err = s.DB.UserTrackedItemUpdateOrAdd(r.Context(), uc.user.ID.Hex(), ti); err != nil {
+		}
+
+		tracked := itemTracked(i.ID.Hex(), uc.user.TrackedItems)
+		if len(uc.user.TrackedItems) >= 25 && !tracked {
+			s.Logger.Debugf("itemAdd: Failed to add item, TrackedItems are limited to 25 for each User, UserID: %s, ItemID: %s",
+				uc.user.ID.Hex(), i.ID.Hex())
+			http.Error(w, http.StatusText(http.StatusUnprocessableEntity), http.StatusUnprocessableEntity)
+			return
+		}
+		ti := model.TrackedItem{
+			ItemID:              i.ID,
+			PriceInitial:        i.Price,
+			PriceLowerThreshold: req.PriceLowerThreshold,
+			NotificationCount:   0,
+			NotificationEnabled: req.NotificationEnabled,
+		}
+		if tracked {
+			if err = s.DB.UserTrackedItemUpdate(r.Context(), uc.user.ID.Hex(), ti); err != nil {
+				s.Logger.Errorf("itemAdd: Error updating TrackedItem on User, err: %v", err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if err = s.DB.UserTrackedItemAdd(r.Context(), uc.user.ID.Hex(), ti); err != nil {
 				s.Logger.Errorf("itemAdd: Error adding TrackedItem to User, err: %v", err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
-			s.writeJsonResponse(w, response{
-				ItemID: itemID,
-				Item:   shopeeItem,
-			}, http.StatusOK)
 		}
+		s.writeJsonResponse(w, response{
+			ItemID:      i.ID.Hex(),
+			TrackedItem: ti,
+			Item:        i,
+		}, http.StatusOK)
 	}
 }
 
@@ -144,9 +168,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 	type request struct {
 		URL string `json:"url"`
 	}
-	type response struct {
-		model.Item
-	}
+	type response model.Item
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := request{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -162,9 +184,10 @@ func (s Server) itemCheck() http.HandlerFunc {
 			return
 		}
 
+		var ecommerceItem model.Item
 		switch siteType {
 		case siteShopee:
-			shopeeItem, err := s.Client.ShopeeGetItem(cleanURL)
+			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
 				if errors.Is(err, client.ErrShopeeItem) {
 					s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
@@ -180,8 +203,25 @@ func (s Server) itemCheck() http.HandlerFunc {
 					return
 				}
 			}
-			s.writeJsonResponse(w, response{shopeeItem}, http.StatusOK)
 		}
+		i, err := s.DB.ItemFindExisting(r.Context(), ecommerceItem)
+		if err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				i = ecommerceItem
+				i.PriceHistoryHighest = i.Price
+				i.PriceHistoryLowest = i.Price
+			} else {
+				s.Logger.Errorf("itemCheck: Error finding existing Item, err: %v", err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			i.UpdateWith(ecommerceItem)
+			if err = s.DB.ItemUpdate(r.Context(), i); err != nil {
+				s.Logger.Errorf("itemCheck: Error updating existing Item, err: %v", err)
+			}
+		}
+		s.writeJsonResponse(w, response(i), http.StatusOK)
 	}
 }
 
@@ -227,7 +267,7 @@ func (s Server) itemUpdate() http.HandlerFunc {
 			NotificationEnabled: req.NotificationEnabled,
 			NotificationCount:   0,
 		}
-		if err = s.DB.UserTrackedItemUpdateOrAdd(r.Context(), uc.user.ID.Hex(), ti); err != nil {
+		if err = s.DB.UserTrackedItemUpdate(r.Context(), uc.user.ID.Hex(), ti); err != nil {
 			s.Logger.Errorf("itemUpdate: Error updating TrackedItem for User with ID: %s, TrackedItem: %+v, err: %v", uc.user.ID.Hex(), ti, err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return

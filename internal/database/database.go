@@ -32,8 +32,8 @@ func ConnectDB(ctx context.Context, dbURI string) (*mongo.Client, error) {
 		mongo.IndexModel{
 			Keys: bson.D{
 				{Key: "site", Value: 1},
+				{Key: "merchant_id", Value: 1},
 				{Key: "product_id", Value: 1},
-				{Key: "product_variant", Value: 1},
 			},
 			Options: options.Index().SetUnique(true),
 		},
