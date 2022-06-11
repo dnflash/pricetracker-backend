@@ -171,6 +171,11 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 }
 
 func (si shopeeItem) toItem() model.Item {
+	if len(si.Description) > 550 {
+		si.Description = si.Description[:550]
+	}
+	si.Description = strings.ReplaceAll(si.Description, "\t", " ")
+	si.Description = strings.ReplaceAll(si.Description, "\n", " ")
 	if len(si.Description) > 500 {
 		si.Description = si.Description[:500] + "..."
 	}
@@ -183,7 +188,7 @@ func (si shopeeItem) toItem() model.Item {
 		Price:       si.Price / 100000,
 		Stock:       si.Stock,
 		ImageURL:    "https://cf.shopee.co.id/file/" + si.Image,
-		Description: strings.ReplaceAll(si.Description, "\n", " "),
+		Description: si.Description,
 		Rating:      si.ItemRating.RatingStar,
 		Sold:        si.HistoricalSold,
 	}
