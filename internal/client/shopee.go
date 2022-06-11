@@ -171,13 +171,8 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 }
 
 func (si shopeeItem) toItem() model.Item {
-	if len(si.Description) > 1050 {
-		si.Description = si.Description[:1050]
-	}
-	si.Description = strings.ReplaceAll(si.Description, "\t", " ")
-	si.Description = strings.ReplaceAll(si.Description, "\n", " ")
-	if len(si.Description) > 1000 {
-		si.Description = si.Description[:1000] + "..."
+	if len(si.Description) > 2000 {
+		si.Description = si.Description[:2000] + "..."
 	}
 	return model.Item{
 		Site:        "Shopee",
