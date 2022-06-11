@@ -110,8 +110,10 @@ func (s Server) itemAdd() http.HandlerFunc {
 				}
 				ih := model.ItemHistory{
 					ItemID:    i.ID,
-					Price:     i.Price,
-					Stock:     i.Stock,
+					Price:     ecommerceItem.Price,
+					Stock:     ecommerceItem.Stock,
+					Rating:    ecommerceItem.Rating,
+					Sold:      ecommerceItem.Sold,
 					Timestamp: primitive.NewDateTimeFromTime(time.Now()),
 				}
 				if err = s.DB.ItemHistoryInsert(r.Context(), ih); err != nil {

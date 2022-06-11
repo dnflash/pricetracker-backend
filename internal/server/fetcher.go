@@ -61,6 +61,8 @@ func (s Server) fetchData(ctx context.Context) {
 			ItemID:    i.ID,
 			Price:     ecommerceItem.Price,
 			Stock:     ecommerceItem.Stock,
+			Rating:    ecommerceItem.Rating,
+			Sold:      ecommerceItem.Sold,
 			Timestamp: primitive.NewDateTimeFromTime(time.Now()),
 		}
 		if err = s.DB.ItemHistoryInsert(ctx, ih); err != nil {
