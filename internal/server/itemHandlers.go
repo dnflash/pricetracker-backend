@@ -438,14 +438,14 @@ func (s Server) itemHistory() http.HandlerFunc {
 		itemID := mux.Vars(r)["itemID"]
 		if itemID == "" {
 			s.Logger.Debug("itemHistory: itemID not supplied")
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			s.writeJsonResponse(w, response{}, http.StatusOK)
 			return
 		}
 		ihs, err := s.DB.ItemHistoryFindRange(r.Context(), itemID, req.Start, req.End)
 		if err != nil {
 			if errors.Is(err, primitive.ErrInvalidHex) {
 				s.Logger.Debugf("itemHistory: itemID invalid, err: %v", err)
-				http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+				s.writeJsonResponse(w, response{}, http.StatusOK)
 				return
 			} else {
 				s.Logger.Errorf("itemHistory: Error getting ItemHistories, err: %v", err)
@@ -455,7 +455,7 @@ func (s Server) itemHistory() http.HandlerFunc {
 		}
 		if len(ihs) == 0 {
 			s.Logger.Debugf("itemHistory: No ItemHistories found for ItemID: %s", itemID)
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			s.writeJsonResponse(w, response{}, http.StatusOK)
 			return
 		}
 		s.writeJsonResponse(w, response(ihs), http.StatusOK)
