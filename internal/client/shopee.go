@@ -52,7 +52,7 @@ func (c Client) ShopeeGetItem(url string) (model.Item, error) {
 	var i model.Item
 	shopID, itemID, ok := shopeeGetShopAndItemID(url)
 	if !ok {
-		return i, errors.Errorf("error getting ShopID and ItemID from URL: %s", url)
+		return i, errors.Wrapf(ErrShopeeItemNotFound, "error getting ShopID and ItemID from URL: %s", url)
 	}
 	apiURL := fmt.Sprintf("https://shopee.co.id/api/v4/item/get?shopid=%s&itemid=%s", shopID, itemID)
 
@@ -104,11 +104,15 @@ func shopeeGetShopAndItemID(urlStr string) (shopID string, itemID string, ok boo
 		return "", "", false
 	}
 	if strings.HasPrefix(parsedURL.Path, "/product/") {
-		sp := strings.Split(parsedURL.Path, "/")
-		return sp[len(sp)-2], sp[len(sp)-1], true
+		if sp := strings.Split(parsedURL.Path, "/"); len(sp) >= 3 {
+			return sp[1], sp[2], true
+		}
+		return "", "", false
 	}
-	sp := strings.Split(parsedURL.Path, ".")
-	return sp[len(sp)-2], sp[len(sp)-1], true
+	if sp := strings.Split(parsedURL.Path, "."); len(sp) >= 3 {
+		return sp[1], sp[2], true
+	}
+	return "", "", false
 }
 
 func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
