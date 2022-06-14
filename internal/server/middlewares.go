@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"pricetracker/internal/model"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -47,23 +48,30 @@ func getTraceContext(ctx context.Context) (traceContext, error) {
 	return tc, nil
 }
 
+func (s Server) maxBytesMw(next http.Handler) http.Handler {
+	return http.MaxBytesHandler(next, 3000)
+}
+
 func (s Server) loggingMw(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		traceID := uuid.NewString()
-		s.Logger.Debugf("loggingMw: Incoming request %s %s from %s, UA: %s, TraceID: %s",
+		s.Logger.Debugf("loggingMw: Incoming request %s %s from %s, UA: %s, traceID: %s",
 			r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent(), traceID)
+
+		defer func() {
+			if re := recover(); re != nil {
+				s.Logger.Errorf("loggingMw: Handler crashed, err: %v, traceID: %s, stack trace:\n%s", re, traceID, debug.Stack())
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+		}()
 
 		tc := traceContext{traceID: traceID}
 		next.ServeHTTP(w, r.WithContext(setTraceContext(r.Context(), tc)))
 
-		s.Logger.Debugf("loggingMw: Incoming request %s %s took %dms, TraceID: %s",
+		s.Logger.Debugf("loggingMw: Incoming request %s %s took %dms, traceID: %s",
 			r.Method, r.URL.Path, time.Now().Sub(start).Milliseconds(), traceID)
 	})
-}
-
-func (s Server) maxBytesMw(next http.Handler) http.Handler {
-	return http.MaxBytesHandler(next, 3000)
 }
 
 func (s Server) authMw(next http.Handler) http.Handler {

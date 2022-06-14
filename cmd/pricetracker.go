@@ -11,6 +11,7 @@ import (
 	"pricetracker/internal/database"
 	"pricetracker/internal/logger"
 	"pricetracker/internal/server"
+	"runtime/debug"
 	"time"
 )
 
@@ -27,7 +28,7 @@ func runApp() error {
 
 	defer func() {
 		if r := recover(); r != nil {
-			appLogger.Errorf("APPLICATION CRASHED: %+v", r)
+			appLogger.Errorf("Application crashed, err: %v, stack trace:\n%s", r, debug.Stack())
 		}
 	}()
 

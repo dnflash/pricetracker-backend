@@ -19,7 +19,7 @@ func (s Server) Router() *mux.Router {
 	userAPI.Use(s.authMw)
 	userAPI.HandleFunc("/logout", s.userLogout()).Methods(http.MethodPost)
 	userAPI.HandleFunc("/info", s.userInfo()).Methods(http.MethodPost)
-	userAPI.PathPrefix("").Handler(http.NotFoundHandler())
+	userAPI.PathPrefix("").Handler(s.notFoundHandler())
 
 	itemAPI := api.PathPrefix("/item").Subrouter()
 	itemAPI.Use(s.authMw)
@@ -31,9 +31,9 @@ func (s Server) Router() *mux.Router {
 	itemAPI.HandleFunc("/get/{itemID}", s.itemGetOne()).Methods(http.MethodGet)
 	itemAPI.HandleFunc("/get", s.itemGetAll()).Methods(http.MethodGet)
 	itemAPI.HandleFunc("/history/{itemID}", s.itemHistory()).Methods(http.MethodPost)
-	itemAPI.PathPrefix("").Handler(http.NotFoundHandler())
+	itemAPI.PathPrefix("").Handler(s.notFoundHandler())
 
-	r.PathPrefix("").Handler(http.NotFoundHandler())
+	r.PathPrefix("").Handler(s.notFoundHandler())
 
 	return r
 }
