@@ -104,8 +104,8 @@ func shopeeGetShopAndItemID(urlStr string) (shopID string, itemID string, ok boo
 		return "", "", false
 	}
 	if strings.HasPrefix(parsedURL.Path, "/product/") {
-		if sp := strings.Split(parsedURL.Path, "/"); len(sp) >= 3 {
-			return sp[1], sp[2], true
+		if sp := strings.Split(parsedURL.Path, "/"); len(sp) >= 4 {
+			return sp[2], sp[3], true
 		}
 		return "", "", false
 	}
