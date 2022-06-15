@@ -50,11 +50,11 @@ func (c Client) FCMSendNotification(fcmReqBody FCMSendRequest) (FCMSendResponse,
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: error doing request: %+v", req)
+		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: error doing request: %#v", req)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Error("FCMSendNotification: error closing response body, req: %+v, err: %v", req, err)
+			c.Logger.Errorf("FCMSendNotification: error closing response body, resp: %#v, req: %#v, err: %v", resp, req, err)
 		}
 	}()
 
@@ -62,9 +62,11 @@ func (c Client) FCMSendNotification(fcmReqBody FCMSendRequest) (FCMSendResponse,
 	respBody, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
 		return fcmSendResp, errors.Wrapf(err,
-			"FCMSendNotification: error reading FCMSendAPI response body, req: %+v, status: %s, body: %s", req, resp.Status, respBody)
+			"FCMSendNotification: error reading FCMSendAPI response body, status: %s, resp body: %s, req: %#v, req body: %s",
+			resp.Status, respBody, req, reqBody)
 	}
 	err = json.Unmarshal(respBody, &fcmSendResp)
 	return fcmSendResp, errors.Wrapf(err,
-		"FCMSendNotification: error unmarshalling FCMSendAPI response body, req: %+v, status: %s, body: %s", req, resp.Status, respBody)
+		"FCMSendNotification: error unmarshalling FCMSendAPI response body, status: %s, resp body: %s, req: %#v, req body: %s",
+		resp.Status, respBody, req, reqBody)
 }

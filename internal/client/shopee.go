@@ -74,25 +74,25 @@ func (c Client) ShopeeGetItem(url string) (model.Item, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Error("ShopeeGetItem: Error closing response body on request to url: %s, err: %v", req.URL, err)
+			c.Logger.Errorf("ShopeeGetItem: Error closing response body, resp: %#v, req: %#v, err: %v", resp, req, err)
 		}
 	}()
 
 	shopeeItemResp := shopeeItemResponse{}
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
-		return i, errors.Wrapf(err, "error reading ShopeeItemAPI response body, status: %s, body: %s", resp.Status, body)
+		return i, errors.Wrapf(err, "error reading ShopeeItemAPI response body, status: %s, body: %s, req: %#v", resp.Status, body, req)
 	}
 	if err = json.Unmarshal(body, &shopeeItemResp); err != nil {
 		return i, errors.Wrapf(err,
-			"error unmarshalling ShopeeItemAPI response body, status: %s, body: %s", resp.Status, body)
+			"error unmarshalling ShopeeItemAPI response body, status: %s, body: %s, req: %#v", resp.Status, body, req)
 	}
 
 	if shopeeItemResp.Error == 4 {
-		return i, errors.Wrapf(ErrShopeeItemNotFound, "Shopee item not found, status: %s, body: %s", resp.Status, body)
+		return i, errors.Wrapf(ErrShopeeItemNotFound, "Shopee item not found, status: %s, body: %s, req: %#v", resp.Status, body, req)
 	}
 	if shopeeItemResp.ActionType != 0 || shopeeItemResp.Data == nil {
-		return i, errors.Wrapf(ErrShopeeItem, "error getting data from ShopeeItemAPI, status: %s, body: %s", resp.Status, body)
+		return i, errors.Wrapf(ErrShopeeItem, "error getting data from ShopeeItemAPI, status: %s, body: %s, req: %#v", resp.Status, body, req)
 	}
 
 	return shopeeItemResp.Data.toItem(), nil
@@ -147,22 +147,22 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Error("ShopeeSearch: Error closing response body on request to url: %s, err: %v", req.URL, err)
+			c.Logger.Errorf("ShopeeSearch: Error closing response body, resp: %#v, req: %#v, err: %v", resp, req, err)
 		}
 	}()
 
 	shopeeSearchResp := shopeeSearchResponse{}
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
-		return is, errors.Wrapf(err, "error reading ShopeeSearchAPI response body, status: %s, body: %s", resp.Status, body)
+		return is, errors.Wrapf(err, "error reading ShopeeSearchAPI response body, status: %s, body: %s, req: %#v", resp.Status, body, req)
 	}
 	if err = json.Unmarshal(body, &shopeeSearchResp); err != nil {
 		return is, errors.Wrapf(err,
-			"error unmarshalling ShopeeSearchAPI response body, status: %s, body: %s", resp.Status, body)
+			"error unmarshalling ShopeeSearchAPI response body, status: %s, body: %s, req: %#v", resp.Status, body, req)
 	}
 
 	if len(shopeeSearchResp.Items) == 0 && !shopeeSearchResp.NoMore {
-		return is, errors.Wrapf(ErrShopeeSearch, "error getting data from ShopeeSearchAPI, status: %s, body: %s", resp.Status, body)
+		return is, errors.Wrapf(ErrShopeeSearch, "error getting data from ShopeeSearchAPI, status: %s, body: %s, req: %#v", resp.Status, body, req)
 	}
 
 	for _, searchItem := range shopeeSearchResp.Items {
