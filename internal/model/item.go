@@ -10,6 +10,8 @@ type Item struct {
 	Site                 string             `bson:"site" json:"site"`
 	MerchantID           string             `bson:"merchant_id" json:"merchant_id"`
 	ProductID            string             `bson:"product_id" json:"product_id"`
+	ParentID             string             `bson:"parent_id" json:"-"`
+	VariationID          string             `bson:"variation_id" json:"-"`
 	URL                  string             `bson:"url" json:"url"`
 	Name                 string             `bson:"name" json:"name"`
 	Price                int                `bson:"price" json:"price"`

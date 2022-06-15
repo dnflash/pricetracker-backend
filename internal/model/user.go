@@ -32,9 +32,9 @@ type TrackedItem struct {
 	PriceInitial           int                `bson:"price_initial" json:"price_initial"`
 	PriceLowerThreshold    int                `bson:"price_lower_threshold" json:"price_lower_threshold"`
 	NotificationEnabled    bool               `bson:"notification_enabled" json:"notification_enabled"`
-	NotificationCount      int                `bson:"notification_count" json:"notification_count"`
-	NotificationCountTotal int                `bson:"notification_count_total" json:"notification_count_total"`
-	LastNotifiedAt         primitive.DateTime `bson:"last_notified_at" json:"last_notified_at"`
+	NotificationCount      int                `bson:"notification_count" json:"-"`
+	NotificationCountTotal int                `bson:"notification_count_total" json:"-"`
+	LastNotifiedAt         primitive.DateTime `bson:"last_notified_at" json:"-"`
 	CreatedAt              primitive.DateTime `bson:"created_at" json:"-"`
 	UpdatedAt              primitive.DateTime `bson:"updated_at" json:"-"`
 }
