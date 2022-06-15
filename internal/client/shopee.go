@@ -110,7 +110,7 @@ func shopeeGetShopAndItemID(urlStr string) (shopID string, itemID string, ok boo
 		return "", "", false
 	}
 	if sp := strings.Split(parsedURL.Path, "."); len(sp) >= 3 {
-		return sp[1], sp[2], true
+		return sp[len(sp)-2], sp[len(sp)-1], true
 	}
 	return "", "", false
 }
