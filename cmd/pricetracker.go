@@ -26,10 +26,28 @@ func runApp() error {
 	logOutput := io.Writer(os.Stdout)
 	appLogger := logger.New(logger.LevelInfo, logOutput)
 
+	logFile, errLogFile := os.OpenFile("pricetracker_backend.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	defer func() {
+		if errLogFile != nil {
+			appLogger.Error("Error opening log file:", errLogFile)
+			return
+		}
+		if err := logFile.Sync(); err != nil {
+			appLogger.Error("Error syncing log file:", err)
+		}
+		if err := logFile.Close(); err != nil {
+			appLogger.Error("Error closing log file:", err)
+		}
+	}()
+
 	defer func() {
 		if r := recover(); r != nil {
 			appLogger.Errorf("Application crashed, err: %v, stack trace:\n%s", r, debug.Stack())
 		}
+	}()
+
+	defer func() {
+		appLogger.Infof("Exiting...")
 	}()
 
 	config, err := configuration.GetConfig("config.toml")
@@ -39,16 +57,9 @@ func runApp() error {
 	}
 
 	if config.LogToFile {
-		logFile, err := os.OpenFile("pricetracker_backend.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			appLogger.Error("Error opening log file:", err)
-			return err
+		if errLogFile != nil {
+			return errLogFile
 		}
-		defer func() {
-			if err := logFile.Close(); err != nil {
-				appLogger.Error("Error closing log file:", err)
-			}
-		}()
 		logOutput = io.MultiWriter(logOutput, logFile)
 	}
 	appLogger = logger.New(config.LogLevel, logOutput)
@@ -83,18 +94,28 @@ func runApp() error {
 		AuthSecretKey: config.AuthSecretKey,
 	}
 
-	appLogger.Info("Starting fetcher with interval:", config.FetchDataInterval)
-	go srv.FetchDataInInterval(appContext, time.NewTicker(config.FetchDataInterval))
-
-	httpSrv := &http.Server{
-		Handler:        srv.Router(),
-		Addr:           config.ServerAddress,
-		WriteTimeout:   15 * time.Second,
-		ReadTimeout:    15 * time.Second,
-		IdleTimeout:    60 * time.Second,
-		MaxHeaderBytes: 1024,
+	if !(config.ServerEnabled || config.FetcherEnabled) {
+		appLogger.Errorf("No functionality enabled")
+		return nil
 	}
 
-	appLogger.Info("Serving on", httpSrv.Addr)
-	return httpSrv.ListenAndServe()
+	if config.FetcherEnabled {
+		appLogger.Info("Starting fetcher with interval:", config.FetchDataInterval)
+		go srv.FetchDataInInterval(appContext, time.NewTicker(config.FetchDataInterval))
+	}
+
+	if config.ServerEnabled {
+		httpSrv := &http.Server{
+			Handler:        srv.Router(),
+			Addr:           config.ServerAddress,
+			WriteTimeout:   15 * time.Second,
+			ReadTimeout:    15 * time.Second,
+			IdleTimeout:    60 * time.Second,
+			MaxHeaderBytes: 1024,
+		}
+		appLogger.Info("Serving on", httpSrv.Addr)
+		return httpSrv.ListenAndServe()
+	}
+
+	select {}
 }
