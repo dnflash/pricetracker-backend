@@ -36,7 +36,7 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 	cleanURL := "https://" + parsedURL.Host + parsedURL.Path
 	if parsedURL.Host == "shopee.co.id" {
 		return siteShopee, cleanURL, nil
-	} else if parsedURL.Host == "www.tokopedia.com" {
+	} else if parsedURL.Host == "www.tokopedia.com" || parsedURL.Host == "tokopedia.com" {
 		return siteTokopedia, cleanURL, nil
 	} else if parsedURL.Host == "www.blibli.com" {
 		return siteBlibli, cleanURL, nil
@@ -81,7 +81,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 		case siteShopee:
 			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				if errors.Is(err, client.ErrShopeeItem) {
+				if errors.Is(err, client.ErrShopee) {
 					s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 					return
@@ -91,6 +91,23 @@ func (s Server) itemAdd() http.HandlerFunc {
 					return
 				} else {
 					s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
+				}
+			}
+		case siteTokopedia:
+			ecommerceItem, err = s.Client.TokopediaGetItem(cleanURL)
+			if err != nil {
+				if errors.Is(err, client.ErrTokopedia) {
+					s.Logger.Errorf("itemAdd: Error getting Tokopedia item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+					return
+				} else if errors.Is(err, client.ErrTokopediaItemNotFound) {
+					s.Logger.Debugf("itemAdd: Item not found when getting Tokopedia item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+					return
+				} else {
+					s.Logger.Errorf("itemAdd: Error getting Tokopedia item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					return
 				}
@@ -197,7 +214,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 		case siteShopee:
 			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
-				if errors.Is(err, client.ErrShopeeItem) {
+				if errors.Is(err, client.ErrShopee) {
 					s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 					return
@@ -207,6 +224,23 @@ func (s Server) itemCheck() http.HandlerFunc {
 					return
 				} else {
 					s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
+				}
+			}
+		case siteTokopedia:
+			ecommerceItem, err = s.Client.TokopediaGetItem(cleanURL)
+			if err != nil {
+				if errors.Is(err, client.ErrTokopedia) {
+					s.Logger.Errorf("itemCheck: Error getting Tokopedia item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+					return
+				} else if errors.Is(err, client.ErrTokopediaItemNotFound) {
+					s.Logger.Debugf("itemCheck: Item not found when getting Tokopedia item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+					return
+				} else {
+					s.Logger.Errorf("itemCheck: Error getting Tokopedia item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					return
 				}

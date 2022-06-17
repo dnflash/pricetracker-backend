@@ -28,5 +28,5 @@ func newRequest(method string, url string, body io.Reader) (*http.Request, error
 
 func setDefaultRequestHeader(r *http.Request) {
 	r.Header.Set("User-Agent", "Mozilla/5.0")
-	r.Header.Set("Accept", "application/json")
+	r.Header.Set("Accept", "*/*")
 }

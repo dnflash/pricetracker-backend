@@ -86,7 +86,7 @@ func runApp() error {
 	srv := server.Server{
 		DB: database.Database{Database: dbConn.Database(database.Name)},
 		Client: client.Client{
-			Client: &http.Client{Timeout: 15 * time.Second},
+			Client: &http.Client{Timeout: 10 * time.Second},
 			FCMKey: config.FCMKey,
 			Logger: appLogger,
 		},

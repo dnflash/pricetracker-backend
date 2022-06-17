@@ -45,6 +45,13 @@ func (s Server) fetchData(ctx context.Context) {
 				s.Logger.Errorf("fetchData: Error getting Shopee item from url: %s, err: %v", cleanURL, err)
 				continue
 			}
+		case siteTokopedia:
+			s.Logger.Debugf("fetchData: Getting Item data from Tokopedia for Item: %s, ID: %s", itemName, i.ID.Hex())
+			ecommerceItem, err = s.Client.TokopediaGetItem(cleanURL)
+			if err != nil {
+				s.Logger.Errorf("fetchData: Error getting Tokopedia item from url: %s, err: %v", cleanURL, err)
+				continue
+			}
 		}
 
 		s.Logger.Debugf("fetchData: Updating Item: %s, ID: %s", itemName, i.ID.Hex())

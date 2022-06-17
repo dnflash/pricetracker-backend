@@ -12,9 +12,8 @@ import (
 	"strings"
 )
 
-var ErrShopeeItem = errors.New("failed getting Shopee item")
+var ErrShopee = errors.New("Shopee error")
 var ErrShopeeItemNotFound = errors.New("Shopee item not found")
-var ErrShopeeSearch = errors.New("failed searching Shopee")
 
 type shopeeItemResponse struct {
 	Error      int         `json:"error"`
@@ -56,43 +55,35 @@ func (c Client) ShopeeGetItem(url string) (model.Item, error) {
 	}
 	apiURL := fmt.Sprintf("https://shopee.co.id/api/v4/item/get?shopid=%s&itemid=%s", shopID, itemID)
 
-	req, err := newRequest(http.MethodGet, apiURL, nil)
+	req, err := shopeeNewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
-		return i, errors.Wrapf(err, "error creating request from apiURL: %s", apiURL)
+		return i, err
 	}
-	req.AddCookie(&http.Cookie{
-		Name:  "SPC_U",
-		Value: "-",
-	})
-	req.AddCookie(&http.Cookie{
-		Name:  "SPC_F",
-		Value: "-",
-	})
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return i, errors.Wrapf(err, "error doing request: %+v", req)
+		return i, errors.Wrapf(ErrShopee, "error doing request:\n%#v,\nerr: %v", req, err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Errorf("ShopeeGetItem: Error closing response body, resp: %#v, req: %#v, err: %v", resp, req, err)
+			c.Logger.Errorf("ShopeeGetItem: Error closing response body, resp:\n%#v,\nreq:\n%#v,\nerr: %v", resp, req, err)
 		}
 	}()
 
 	shopeeItemResp := shopeeItemResponse{}
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
-		return i, errors.Wrapf(err, "error reading ShopeeItemAPI response body, status: %s, body: %s, req: %#v", resp.Status, body, req)
+		return i, errors.Wrapf(err, "error reading ShopeeItemAPI response body, status: %s, body:\n%s,\nreq:\n%#v", resp.Status, body, req)
 	}
 	if err = json.Unmarshal(body, &shopeeItemResp); err != nil {
 		return i, errors.Wrapf(err,
-			"error unmarshalling ShopeeItemAPI response body, status: %s, body: %s, req: %#v", resp.Status, body, req)
+			"error unmarshalling ShopeeItemAPI response body, status: %s, body:\n%s,\nreq:\n%#v", resp.Status, body, req)
 	}
 
 	if shopeeItemResp.Error == 4 {
-		return i, errors.Wrapf(ErrShopeeItemNotFound, "Shopee item not found, status: %s, body: %s, req: %#v", resp.Status, body, req)
+		return i, errors.Wrapf(ErrShopeeItemNotFound, "Shopee item not found, status: %s, body:\n%s,\nreq:\n%#v", resp.Status, body, req)
 	}
 	if shopeeItemResp.ActionType != 0 || shopeeItemResp.Data == nil {
-		return i, errors.Wrapf(ErrShopeeItem, "error getting data from ShopeeItemAPI, status: %s, body: %s, req: %#v", resp.Status, body, req)
+		return i, errors.Wrapf(ErrShopee, "error getting data from ShopeeItemAPI, status: %s, body:\n%s,\nreq:\n%#v", resp.Status, body, req)
 	}
 
 	return shopeeItemResp.Data.toItem(), nil
@@ -118,9 +109,9 @@ func shopeeGetShopAndItemID(urlStr string) (shopID string, itemID string, ok boo
 func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 	var is []model.Item
 	apiURL := "https://shopee.co.id/api/v4/search/search_items"
-	req, err := newRequest(http.MethodGet, apiURL, nil)
+	req, err := shopeeNewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
-		return is, errors.Wrapf(err, "error creating request from apiURL: %s", apiURL)
+		return is, err
 	}
 	qp := url.Values{
 		"by":        []string{"relevancy"},
@@ -133,36 +124,29 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 		"version":   []string{"2"},
 	}.Encode()
 	req.URL.RawQuery = strings.ReplaceAll(qp, "+", "%20")
-	req.AddCookie(&http.Cookie{
-		Name:  "SPC_U",
-		Value: "-",
-	})
-	req.AddCookie(&http.Cookie{
-		Name:  "SPC_F",
-		Value: "-",
-	})
+
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return is, errors.Wrapf(err, "error doing request: %+v", req)
+		return is, errors.Wrapf(ErrShopee, "error doing request:\n%#v,\nerr: %v", req, err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Errorf("ShopeeSearch: Error closing response body, resp: %#v, req: %#v, err: %v", resp, req, err)
+			c.Logger.Errorf("ShopeeSearch: Error closing response body, resp:\n%#v,\nreq:\n%#v,\nerr: %v", resp, req, err)
 		}
 	}()
 
 	shopeeSearchResp := shopeeSearchResponse{}
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
-		return is, errors.Wrapf(err, "error reading ShopeeSearchAPI response body, status: %s, body: %s, req: %#v", resp.Status, body, req)
+		return is, errors.Wrapf(err, "error reading ShopeeSearchAPI response body, status: %s, body:\n%s,\nreq:\n%#v", resp.Status, body, req)
 	}
 	if err = json.Unmarshal(body, &shopeeSearchResp); err != nil {
 		return is, errors.Wrapf(err,
-			"error unmarshalling ShopeeSearchAPI response body, status: %s, body: %s, req: %#v", resp.Status, body, req)
+			"error unmarshalling ShopeeSearchAPI response body, status: %s, body:\n%s,\nreq:\n%#v", resp.Status, body, req)
 	}
 
 	if len(shopeeSearchResp.Items) == 0 && !shopeeSearchResp.NoMore {
-		return is, errors.Wrapf(ErrShopeeSearch, "error getting data from ShopeeSearchAPI, status: %s, body: %s, req: %#v", resp.Status, body, req)
+		return is, errors.Wrapf(ErrShopee, "error getting data from ShopeeSearchAPI, status: %s, body:\n%s,\nreq:\n%#v", resp.Status, body, req)
 	}
 
 	for _, searchItem := range shopeeSearchResp.Items {
@@ -191,4 +175,20 @@ func (si shopeeItem) toItem() model.Item {
 		Rating:      si.ItemRating.RatingStar,
 		Sold:        si.HistoricalSold,
 	}
+}
+
+func shopeeNewRequest(method string, url string, body io.Reader) (*http.Request, error) {
+	req, err := newRequest(method, url, body)
+	if err != nil {
+		return nil, errors.Wrapf(err, "error creating request from URL: %s", url)
+	}
+	req.AddCookie(&http.Cookie{
+		Name:  "SPC_U",
+		Value: "-",
+	})
+	req.AddCookie(&http.Cookie{
+		Name:  "SPC_F",
+		Value: "-",
+	})
+	return req, nil
 }
