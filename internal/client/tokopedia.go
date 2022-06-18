@@ -234,7 +234,7 @@ func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
 func tokopediaFindValue(page string, key string, sep string, unquote bool, maxLength int) (string, error) {
 	keyIdx := strings.Index(page, key)
 	if keyIdx < 0 {
-		return "", errors.Wrapf(errTokopediaFieldKeyNotFound, "key (%s) not found, page: %s",
+		return "", errors.Wrapf(errTokopediaFieldKeyNotFound, "key (%#v) not found, page: %#v",
 			key, misc.StringLimit(page, misc.Max(maxLength+100, 250)))
 	}
 	page = page[keyIdx+len(key):]
@@ -249,8 +249,8 @@ func tokopediaFindValue(page string, key string, sep string, unquote bool, maxLe
 	} else if sepIdx < 0 && clBrIdx >= 0 {
 		opBrIdx := strings.Index(page, "{")
 		if opBrIdx >= 0 && opBrIdx < clBrIdx {
-			return "", errors.Errorf("sep (\"%s\") for key (%s) not found and (\"}\") substitute is invalid, page: %s",
-				sep, key, misc.StringLimit(page, misc.Max(maxLength+100, 250)))
+			return "", errors.Errorf("failed to find value for key (%#v), sep (%#v) not found and \"}\" substitute is invalid, page: %#v",
+				key, sep, misc.StringLimit(page, misc.Max(maxLength+100, 250)))
 		}
 		sep = "}"
 	}
@@ -260,7 +260,7 @@ func tokopediaFindValue(page string, key string, sep string, unquote bool, maxLe
 		if unquote {
 			unqVal, err := strconv.Unquote(val)
 			if err != nil {
-				return "", errors.Wrapf(err, "failed unquoting value for key (%s), val: %#v",
+				return "", errors.Wrapf(err, "failed unquoting value for key (%#v), val: %#v",
 					key, misc.StringLimit(val, misc.Max(maxLength+100, 250)))
 			} else {
 				val = unqVal
@@ -268,11 +268,11 @@ func tokopediaFindValue(page string, key string, sep string, unquote bool, maxLe
 		}
 		val = html.UnescapeString(val)
 		if len(val) > maxLength {
-			return "", errors.Errorf("value for key (%s) too long (max: %d), val: %s",
+			return "", errors.Errorf("value for key (%#v) too long (max: %d), val: %#v",
 				key, maxLength, misc.StringLimit(val, misc.Max(maxLength+100, 250)))
 		}
 		return val, nil
 	}
-	return "", errors.Errorf("failed to find value for key (%s), page: %s",
-		key, misc.StringLimit(page, misc.Max(maxLength+100, 250)))
+	return "", errors.Errorf("failed to find value for key (%#v), sep (%#v) not found, page: %#v",
+		key, sep, misc.StringLimit(page, misc.Max(maxLength+100, 250)))
 }

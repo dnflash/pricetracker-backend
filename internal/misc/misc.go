@@ -17,6 +17,12 @@ func Min[T constraints.Ordered](a, b T) T {
 }
 
 func StringLimit(s string, n int) string {
+	if n < 0 {
+		return ""
+	}
+	if n <= 3 {
+		return s[:Min(n, len(s))]
+	}
 	if len(s) > n {
 		return s[:n-3] + "..."
 	}
@@ -24,6 +30,12 @@ func StringLimit(s string, n int) string {
 }
 
 func BytesLimit(bs []byte, n int) []byte {
+	if n < 0 {
+		return nil
+	}
+	if n <= 3 {
+		return bs[:Min(n, len(bs))]
+	}
 	if len(bs) > n {
 		return append(bs[:n-3], "..."...)
 	}
