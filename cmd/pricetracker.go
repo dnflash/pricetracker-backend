@@ -83,10 +83,20 @@ func runApp() error {
 		}
 	}()
 
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxConnsPerHost = 8
+	t.MaxIdleConnsPerHost = 8
+	t.IdleConnTimeout = 180 * time.Second
 	srv := server.Server{
 		DB: database.Database{Database: dbConn.Database(database.Name)},
 		Client: client.Client{
-			Client: &http.Client{Timeout: 10 * time.Second},
+			Client: &http.Client{
+				Timeout: 10 * time.Second,
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+				Transport: t,
+			},
 			FCMKey: config.FCMKey,
 			Logger: appLogger,
 		},

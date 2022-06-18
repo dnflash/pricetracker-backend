@@ -36,7 +36,7 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 	cleanURL := "https://" + parsedURL.Host + parsedURL.Path
 	if parsedURL.Host == "shopee.co.id" {
 		return siteShopee, cleanURL, nil
-	} else if parsedURL.Host == "www.tokopedia.com" || parsedURL.Host == "tokopedia.com" {
+	} else if parsedURL.Host == "www.tokopedia.com" || parsedURL.Host == "tokopedia.com" || parsedURL.Host == "tokopedia.link" {
 		return siteTokopedia, cleanURL, nil
 	} else if parsedURL.Host == "www.blibli.com" {
 		return siteBlibli, cleanURL, nil

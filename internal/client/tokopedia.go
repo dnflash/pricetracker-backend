@@ -24,11 +24,13 @@ func (c Client) TokopediaGetItem(url string) (model.Item, error) {
 	var i model.Item
 	normURL, isShareLink, err := tokopediaNormalizeURL(url)
 	if err != nil {
-		return i, errors.Wrapf(ErrTokopediaItemNotFound, "error normalizing URL: %v", err)
+		return i, fmt.Errorf("%w: error normalizing URL, err: %v", ErrTokopediaItemNotFound, err)
 	}
 	if isShareLink {
-		//TODO
-		normURL = ""
+		normURL, err = c.tokopediaResolveShareLink(normURL)
+		if err != nil {
+			return i, fmt.Errorf("%w: error resolving share link, err: %v", ErrTokopediaItemNotFound, err)
+		}
 	}
 	req, err := newRequest(http.MethodGet, normURL, nil)
 	if err != nil {
@@ -44,7 +46,7 @@ func (c Client) TokopediaGetItem(url string) (model.Item, error) {
 		}
 	}()
 
-	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 1000000))
+	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 1024*1024))
 	if err != nil {
 		return i, errors.Wrapf(err,
 			"error reading Tokopedia product page response body, status: %s, body:\n%s,\nreq:\n%#v",
@@ -85,9 +87,40 @@ func tokopediaNormalizeURL(urlStr string) (string, bool, error) {
 		} else {
 			return "", false, errors.Errorf("invalid url: %s", urlStr)
 		}
+	} else if parsedURL.Host == "tokopedia.link" && len(parsedURL.Path) > 5 {
+		return "https://tokopedia.app.link" + parsedURL.Path, true, nil
 	} else {
 		return "", false, errors.Errorf("invalid url: %s", urlStr)
 	}
+}
+
+func (c Client) tokopediaResolveShareLink(url string) (string, error) {
+	req, err := newRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("error creating request from URL: %s, err: %w", url, err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 Windows")
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error doing request, req:\n%#v,\nerr: %w", req, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	bodyRdr := io.LimitReader(resp.Body, 500*1024)
+	if resp.StatusCode != http.StatusTemporaryRedirect {
+		body, _ := io.ReadAll(bodyRdr)
+		return "", fmt.Errorf("failed resolving share link, url: %s, status is not %d, resp:\n%#v,\nbody:\n%s,\nreq:\n%#v",
+			url, http.StatusTemporaryRedirect, resp, misc.BytesLimit(body, 500), req)
+	}
+	_, _ = io.Copy(io.Discard, bodyRdr)
+	normURL, isShareLink, err := tokopediaNormalizeURL(resp.Header.Get("Location"))
+	if err != nil {
+		return "", fmt.Errorf("failed resolving share link, err: %w", err)
+	} else if isShareLink {
+		return "", fmt.Errorf("failed resolving share link: recursive")
+	}
+	return normURL, nil
 }
 
 func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
