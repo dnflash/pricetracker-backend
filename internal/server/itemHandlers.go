@@ -507,22 +507,54 @@ func (s Server) itemHistory() http.HandlerFunc {
 func (s Server) itemSearch() http.HandlerFunc {
 	type response []model.Item
 	return func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("query")
-		if q == "" {
-			s.Logger.Debugf("itemSearch: \"query\" query parameter is not supplied")
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
+		var qa [2]string
+		qa[0] = r.URL.Query().Get("query")
+		if qa[0] == "" {
+			if bc := r.URL.Query().Get("bc"); bc == "" {
+				s.Logger.Debugf("itemSearch: No search parameters supplied")
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			} else {
+				b, err := s.DB.BarcodeFind(r.Context(), bc)
+				if err != nil {
+					if errors.Is(err, mongo.ErrNoDocuments) {
+						s.Logger.Debugf("itemSearch: Barcode (%#v) not found", bc)
+						s.writeJsonResponse(w, response([]model.Item{}), http.StatusOK)
+						return
+					} else {
+						s.Logger.Errorf("itemSearch: Error finding barcode (%#v), err: %v", bc, err)
+						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+						return
+					}
+				}
+				qa[0] = b.Query1
+				qa[1] = b.Query2
+				s.Logger.Infof("itemSearch: Barcode (%#v) found, q1: %#v, q2: %#v", bc, qa[0], qa[1])
+			}
 		}
-		is, err := s.Client.ShopeeSearch(q)
-		if err != nil {
-			s.Logger.Errorf("itemSearch: Error searching Shopee with query: %s, err: %v", q, err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
+		var items []model.Item
+		for i, q := range qa {
+			if q != "" {
+				is, err := s.Client.ShopeeSearch(q)
+				if err != nil {
+					s.Logger.Errorf("itemSearch: Error searching Shopee with q%d: %#v, err: %v", i+1, q, err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
+				}
+				if len(is) == 0 {
+					s.Logger.Debugf("itemSearch: Searched Shopee with q%d: %#v, no items found", i+1, q)
+				} else {
+					s.Logger.Debugf("itemSearch: Searched Shopee with q%d: %#v, %d items found", i+1, q, len(is))
+					items = append(items, is...)
+					break
+				}
+			}
 		}
-		is = append([]model.Item{}, is...)
-		if len(is) > 3 {
-			is = is[:3]
+		if len(items) == 0 {
+			items = []model.Item{}
+		} else if len(items) > 3 {
+			items = items[:3]
 		}
-		s.writeJsonResponse(w, response(is), http.StatusOK)
+		s.writeJsonResponse(w, response(items), http.StatusOK)
 	}
 }
