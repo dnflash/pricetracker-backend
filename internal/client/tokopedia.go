@@ -193,7 +193,7 @@ func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
 	}
 	imageURL = strings.Replace(imageURL, "/200-square/", "/500-square/", 1)
 
-	itemDescription, err := tokopediaFindValue(page, "{\"title\":\"Deskripsi\",\"subtitle\":", ",\"", true, 2000)
+	itemDescription, err := tokopediaFindValue(page, "{\"title\":\"Deskripsi\",\"subtitle\":", ",\"", true, 3500)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed getting itemDescription")
 	}
@@ -225,7 +225,7 @@ func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
 		Price:       itemPrice,
 		Stock:       itemStock,
 		ImageURL:    imageURL,
-		Description: itemDescription,
+		Description: misc.StringLimit(itemDescription, 2500),
 		Rating:      itemRating,
 		Sold:        itemSold,
 	}, nil

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"pricetracker/internal/misc"
 	"pricetracker/internal/model"
 	"strconv"
 	"strings"
@@ -159,9 +160,6 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 }
 
 func (si shopeeItem) toItem() model.Item {
-	if len(si.Description) > 2000 {
-		si.Description = si.Description[:2000] + "..."
-	}
 	return model.Item{
 		Site:        "Shopee",
 		MerchantID:  strconv.Itoa(si.ShopID),
@@ -171,7 +169,7 @@ func (si shopeeItem) toItem() model.Item {
 		Price:       si.Price / 100000,
 		Stock:       si.Stock,
 		ImageURL:    "https://cf.shopee.co.id/file/" + si.Image,
-		Description: si.Description,
+		Description: misc.StringLimit(si.Description, 2500),
 		Rating:      si.ItemRating.RatingStar,
 		Sold:        si.HistoricalSold,
 	}
