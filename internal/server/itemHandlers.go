@@ -507,47 +507,71 @@ func (s Server) itemHistory() http.HandlerFunc {
 func (s Server) itemSearch() http.HandlerFunc {
 	type response []model.Item
 	return func(w http.ResponseWriter, r *http.Request) {
+		tid := getTraceContext(r.Context()).traceID
+		var bc string
 		var qa [2]string
 		qa[0] = r.URL.Query().Get("query")
 		if qa[0] == "" {
-			if bc := r.URL.Query().Get("bc"); bc == "" {
-				s.Logger.Debugf("itemSearch: No search parameters supplied")
+			if bc = r.URL.Query().Get("bc"); bc == "" {
+				s.Logger.Debugf("itemSearch: No search parameters supplied, TraceID: %s", tid)
 				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 				return
 			} else {
 				b, err := s.DB.BarcodeFind(r.Context(), bc)
 				if err != nil {
 					if errors.Is(err, mongo.ErrNoDocuments) {
-						s.Logger.Debugf("itemSearch: Barcode (%#v) not found", bc)
+						s.Logger.Debugf("itemSearch: Barcode %#v not found, TraceID: %s", bc, tid)
 						s.writeJsonResponse(w, response([]model.Item{}), http.StatusOK)
 						return
 					} else {
-						s.Logger.Errorf("itemSearch: Error finding barcode (%#v), err: %v", bc, err)
+						s.Logger.Errorf("itemSearch: Error finding barcode %#v, err: %v, TraceID: %s", bc, err, tid)
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 						return
 					}
 				}
 				qa[0] = b.Query1
 				qa[1] = b.Query2
-				s.Logger.Infof("itemSearch: Barcode (%#v) found, q1: %#v, q2: %#v", bc, qa[0], qa[1])
+				if qa[0] == qa[1] {
+					qa[1] = ""
+				}
+				s.Logger.Infof("itemSearch: Barcode %#v found, q1: %#v, q2: %#v, TraceID: %s", bc, qa[0], qa[1], tid)
 			}
+		} else {
+			s.Logger.Infof("itemSearch: Searching items with query: %#v, TraceID: %s", qa[0], tid)
 		}
 		var items []model.Item
 		for i, q := range qa {
 			if q != "" {
 				is, err := s.Client.ShopeeSearch(q)
 				if err != nil {
-					s.Logger.Errorf("itemSearch: Error searching Shopee with q%d: %#v, err: %v", i+1, q, err)
+					s.Logger.Errorf("itemSearch: Error searching Shopee with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					return
 				}
-				if len(is) == 0 {
-					s.Logger.Debugf("itemSearch: Searched Shopee with q%d: %#v, no items found", i+1, q)
-				} else {
-					s.Logger.Debugf("itemSearch: Searched Shopee with q%d: %#v, %d items found", i+1, q, len(is))
-					items = append(items, is...)
+				if len(is) > 0 && len(items) > 0 {
+					deduplicated := make([]model.Item, 0, len(is))
+					for _, v := range is {
+						var duplicated bool
+						for _, v2 := range items {
+							if v.Site == v2.Site && v.ProductID == v2.ProductID {
+								duplicated = true
+								break
+							}
+						}
+						if !duplicated {
+							deduplicated = append(deduplicated, v)
+						}
+					}
+					items = append(items, deduplicated...)
+				} else if len(items) == 0 {
+					items = is
+				}
+				s.Logger.Debugf("itemSearch: Searched Shopee with q%d: %#v, %d item(s) found, TraceID: %s", i+1, q, len(is), tid)
+				if len(is) >= 3 {
 					break
 				}
+			} else if bc != "" {
+				s.Logger.Debugf("itemSearch: Barcode %#v q%d is empty, TraceID: %s", bc, i+1, tid)
 			}
 		}
 		if len(items) == 0 {

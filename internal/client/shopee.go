@@ -117,7 +117,7 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 	qp := url.Values{
 		"by":        []string{"relevancy"},
 		"keyword":   []string{query},
-		"limit":     []string{"5"},
+		"limit":     []string{"10"},
 		"newest":    []string{"0"},
 		"order":     []string{"desc"},
 		"page_type": []string{"search"},

@@ -20,13 +20,7 @@ func (s Server) writeJsonResponse(w http.ResponseWriter, response any, statusCod
 
 func (s Server) notFoundHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tc, err := getTraceContext(r.Context())
-		if err != nil {
-			s.Logger.Errorf("notFoundHandler: Error getting traceContext, err: %v", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-		s.Logger.Debugf("notFoundHandler: Requested resource not found, TraceID: %s", tc.traceID)
+		s.Logger.Debugf("notFoundHandler: Requested resource not found, TraceID: %s", getTraceContext(r.Context()).traceID)
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	}
 }

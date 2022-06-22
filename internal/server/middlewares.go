@@ -40,12 +40,9 @@ func getUserContext(ctx context.Context) (userContext, error) {
 func setTraceContext(ctx context.Context, tc traceContext) context.Context {
 	return context.WithValue(ctx, traceContextKey{}, tc)
 }
-func getTraceContext(ctx context.Context) (traceContext, error) {
-	tc, ok := ctx.Value(traceContextKey{}).(traceContext)
-	if !ok {
-		return tc, errors.New("failed to get traceContext")
-	}
-	return tc, nil
+func getTraceContext(ctx context.Context) traceContext {
+	tc, _ := ctx.Value(traceContextKey{}).(traceContext)
+	return tc
 }
 
 func (s Server) maxBytesMw(next http.Handler) http.Handler {
