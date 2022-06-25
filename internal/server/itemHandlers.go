@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"pricetracker/internal/client"
+	"pricetracker/internal/misc"
 	"pricetracker/internal/model"
 	"time"
 )
@@ -511,6 +512,15 @@ func (s Server) itemSearch() http.HandlerFunc {
 		var bc string
 		var qa [2]string
 		qa[0] = r.URL.Query().Get("query")
+		if qa[0] != "" {
+			qa[0] = qa[0][:misc.Min(len(qa[0]), 100)]
+			cleanedQuery := misc.CleanString(qa[0])
+			if qa[0] != cleanedQuery {
+				s.Logger.Debugf("itemSearch: Cleaned search query, original: %#v, cleaned: %#v, TraceID: %s",
+					qa[0], cleanedQuery, tid)
+				qa[0] = cleanedQuery
+			}
+		}
 		if qa[0] == "" {
 			if bc = r.URL.Query().Get("bc"); bc == "" {
 				s.Logger.Debugf("itemSearch: No search parameters supplied, TraceID: %s", tid)
@@ -539,46 +549,62 @@ func (s Server) itemSearch() http.HandlerFunc {
 		} else {
 			s.Logger.Infof("itemSearch: Searching items with query: %#v, TraceID: %s", qa[0], tid)
 		}
-		var items []model.Item
+		var shopeeItems []model.Item
+		var tokopediaItems []model.Item
 		for i, q := range qa {
 			if q != "" {
-				is, err := s.Client.ShopeeSearch(q)
-				if err != nil {
-					s.Logger.Errorf("itemSearch: Error searching Shopee with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
-					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-					return
-				}
-				if len(is) > 0 && len(items) > 0 {
-					deduplicated := make([]model.Item, 0, len(is))
-					for _, v := range is {
-						var duplicated bool
-						for _, v2 := range items {
-							if v.Site == v2.Site && v.ProductID == v2.ProductID {
-								duplicated = true
-								break
-							}
+				if len(shopeeItems) < 3 {
+					is, err := s.Client.ShopeeSearch(q)
+					if err == nil {
+						if len(is) > 0 && len(shopeeItems) > 0 {
+							shopeeItems = mergeItemSlices(shopeeItems, is)
+						} else if len(shopeeItems) == 0 {
+							shopeeItems = is
 						}
-						if !duplicated {
-							deduplicated = append(deduplicated, v)
-						}
+						s.Logger.Debugf("itemSearch: Searched Shopee with q%d: %#v, %d item(s) found, TraceID: %s", i+1, q, len(is), tid)
+					} else {
+						s.Logger.Errorf("itemSearch: Error searching Shopee with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
 					}
-					items = append(items, deduplicated...)
-				} else if len(items) == 0 {
-					items = is
 				}
-				s.Logger.Debugf("itemSearch: Searched Shopee with q%d: %#v, %d item(s) found, TraceID: %s", i+1, q, len(is), tid)
-				if len(is) >= 3 {
-					break
+				if len(tokopediaItems) < 3 {
+					is, err := s.Client.TokopediaSearch(q)
+					if err == nil {
+						if len(is) > 0 && len(tokopediaItems) > 0 {
+							tokopediaItems = mergeItemSlices(tokopediaItems, is)
+						} else if len(tokopediaItems) == 0 {
+							tokopediaItems = is
+						}
+						s.Logger.Debugf("itemSearch: Searched Tokopedia with q%d: %#v, %d item(s) found, TraceID: %s", i+1, q, len(is), tid)
+					} else {
+						s.Logger.Errorf("itemSearch: Error searching Tokopedia with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
+					}
 				}
 			} else if bc != "" {
 				s.Logger.Debugf("itemSearch: Barcode %#v q%d is empty, TraceID: %s", bc, i+1, tid)
 			}
 		}
-		if len(items) == 0 {
-			items = []model.Item{}
-		} else if len(items) > 3 {
-			items = items[:3]
-		}
+		shopeeItems = shopeeItems[:misc.Min(len(shopeeItems), 3)]
+		tokopediaItems = tokopediaItems[:misc.Min(len(tokopediaItems), 3)]
+		items := make([]model.Item, 0, len(shopeeItems)+len(tokopediaItems))
+		items = append(items, shopeeItems...)
+		items = append(items, tokopediaItems...)
 		s.writeJsonResponse(w, response(items), http.StatusOK)
 	}
+}
+
+func mergeItemSlices(is []model.Item, is2 []model.Item) []model.Item {
+	deduplicated := make([]model.Item, 0, len(is2))
+	for _, v := range is2 {
+		var duplicated bool
+		for _, v2 := range is {
+			if v2.Site == v.Site && v2.ProductID == v.ProductID {
+				duplicated = true
+				break
+			}
+		}
+		if !duplicated {
+			deduplicated = append(deduplicated, v)
+		}
+	}
+	return append(is, deduplicated...)
 }

@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/pkg/errors"
 	"html"
@@ -275,4 +276,160 @@ func tokopediaFindValue(page string, key string, sep string, unquote bool, maxLe
 	}
 	return "", errors.Errorf("failed to find value for key (%#v), sep (%#v) not found, page: %#v",
 		key, sep, misc.StringLimit(page, misc.Max(maxLength+100, 250)))
+}
+
+type tokopediaSearchRequest struct {
+	OperationName string            `json:"operationName"`
+	Variables     map[string]string `json:"variables"`
+	Query         string            `json:"query"`
+}
+
+type tokopediaSearchResponse struct {
+	Data struct {
+		AceSearch struct {
+			Data struct {
+				Products []tokopediaSearchProduct `json:"products"`
+			} `json:"data"`
+		} `json:"ace_search_product_v4"`
+	} `json:"data"`
+}
+
+type tokopediaSearchProduct struct {
+	ID            int                        `json:"id"`
+	URL           string                     `json:"url"`
+	Name          string                     `json:"name"`
+	ImageURL      string                     `json:"imageUrl"`
+	Price         string                     `json:"price"`
+	Stock         int                        `json:"stock"`
+	RatingAverage string                     `json:"ratingAverage"`
+	LabelGroups   []map[string]any           `json:"labelGroups"`
+	Shop          tokopediaSearchProductShop `json:"shop"`
+}
+
+type tokopediaSearchProductShop struct {
+	ShopID int    `json:"shopId"`
+	Name   string `json:"name"`
+	URL    string `json:"url"`
+}
+
+func (c Client) TokopediaSearch(query string) ([]model.Item, error) {
+	apiURL := "https://gql.tokopedia.com/graphql/SearchProductQueryV4"
+	params := url.Values{
+		"device":      []string{"desktop"},
+		"q":           []string{query},
+		"related":     []string{"true"},
+		"rows":        []string{"10"},
+		"safe_search": []string{"false"},
+		"scheme":      []string{"https"},
+		"source":      []string{"search"},
+	}.Encode()
+	params = strings.ReplaceAll(params, "+", "%20")
+	searchReq := []tokopediaSearchRequest{{
+		OperationName: "SearchProductQueryV4",
+		Variables:     map[string]string{"params": params},
+		Query: "query SearchProductQueryV4($params: String!) {\n  ace_search_product_v4(params: $params) {\n" +
+			"    data {\n      products {\n        id\n        name\n        countReview\n        discountPercentage\n" +
+			"        imageUrl\n        originalPrice\n        price\n        priceRange\n        stock\n" +
+			"        ratingAverage\n        labelGroups {\n              position\n              type\n" +
+			"              title\n              url\n            }\n        shop {\n          shopId: id\n" +
+			"          name\n          url\n          city\n          isOfficial\n          isPowerBadge\n" +
+			"        }\n        url\n      }\n      violation {\n        headerText\n        descriptionText\n" +
+			"        imageURL\n        ctaURL\n        ctaApplink\n        buttonText\n        buttonType\n      }\n" +
+			"    }\n  }\n}\n",
+	}}
+
+	var reqBodyBuf bytes.Buffer
+	reqEncoder := json.NewEncoder(&reqBodyBuf)
+	reqEncoder.SetEscapeHTML(false)
+	if err := reqEncoder.Encode(searchReq); err != nil {
+		return nil, fmt.Errorf("failed encoding request body: %w", err)
+	}
+	reqBody := bytes.TrimSuffix(reqBodyBuf.Bytes(), []byte("\n"))
+
+	req, err := newRequest(http.MethodPost, apiURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request to URL: %s, with body:\n%s,\nerr: %w", apiURL, reqBody, err)
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Origin", "https://www.tokopedia.com")
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: error doing request:\n%#v,\nreq body:\n%s,\nerr: %v", ErrTokopedia, req, reqBody, err)
+	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 300*1024))
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error reading Tokopedia search response body, status: %s, resp body:\n%s,\nreq:\n%#v,\nreq body:\n%s,\nerr: %w",
+			resp.Status, misc.BytesLimit(respBody, 500), req, reqBody, err)
+	}
+
+	var searchResp []tokopediaSearchResponse
+	if err = json.Unmarshal(respBody, &searchResp); err != nil {
+		return nil, fmt.Errorf(
+			"failed unmarshalling search response, status: %s, resp body:\n%s,\nreq:\n%#v,\nreq body:\n%s,\nerr: %w",
+			resp.Status, misc.BytesLimit(respBody, 500), req, reqBody, err)
+	}
+	if len(searchResp) == 0 {
+		return nil, fmt.Errorf(
+			"search response body empty, status: %s, resp body:\n%s,\nreq:\n%#v,\nreq body:\n%s",
+			resp.Status, misc.BytesLimit(respBody, 500), req, reqBody)
+	}
+	tokopediaProducts := searchResp[0].Data.AceSearch.Data.Products
+
+	is := make([]model.Item, 0, len(tokopediaProducts))
+	for _, p := range tokopediaProducts {
+		i := p.toItem()
+		if i.URL == "" || i.Price == -1 || i.ImageURL == "" || i.Rating == -1 || i.Sold == -1 {
+			c.Logger.Warnf("TokopediaSearch: Parsing error on Tokopedia product: %+v, Item: %+v", p, i)
+			continue
+		}
+		is = append(is, i)
+	}
+	return is, nil
+}
+
+func (ti tokopediaSearchProduct) toItem() model.Item {
+	var itemURL string
+	if parsedURL, err := url.Parse(ti.URL); err == nil {
+		itemURL = "https://www.tokopedia.com" + parsedURL.Path
+	}
+	price, err := strconv.Atoi(strings.ReplaceAll(strings.TrimPrefix(ti.Price, "Rp"), ".", ""))
+	if err != nil {
+		price = -1
+	}
+	var imageURL string
+	if parsedImageURL, err := url.Parse(ti.ImageURL); err == nil {
+		imageURL = "https://images.tokopedia.net" +
+			strings.Replace(parsedImageURL.Path, "/200-square/", "/500-square/", 1)
+	}
+	rating, err := strconv.ParseFloat(ti.RatingAverage, 64)
+	if err != nil {
+		rating = -1
+	}
+	var soldStr string
+	for _, v := range ti.LabelGroups {
+		if v["position"] == "integrity" {
+			soldStr, _ = v["title"].(string)
+		}
+	}
+	soldStr = strings.TrimPrefix(soldStr, "Terjual ")
+	soldStr = strings.TrimSuffix(soldStr, "+")
+	soldStr = strings.ReplaceAll(soldStr, " rb", "000")
+	soldStr = strings.ReplaceAll(soldStr, " jt", "000000")
+	sold, err := strconv.Atoi(soldStr)
+	if err != nil {
+		sold = -1
+	}
+	return model.Item{
+		Site:       "Tokopedia",
+		MerchantID: strconv.Itoa(ti.Shop.ShopID),
+		ProductID:  strconv.Itoa(ti.ID),
+		URL:        itemURL,
+		Name:       ti.Name,
+		Price:      price,
+		Stock:      ti.Stock,
+		ImageURL:   imageURL,
+		Rating:     rating,
+		Sold:       sold,
+	}
 }
