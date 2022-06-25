@@ -380,7 +380,7 @@ func (c Client) TokopediaSearch(query string) ([]model.Item, error) {
 	for _, p := range tokopediaProducts {
 		i := p.toItem()
 		if i.URL == "" || i.Price == -1 || i.ImageURL == "" || i.Rating == -1 || i.Sold == -1 {
-			c.Logger.Warnf("TokopediaSearch: Parsing error on Tokopedia product: %+v, Item: %+v", p, i)
+			c.Logger.Warnf("TokopediaSearch: Parsing error on Tokopedia product: %#v, Item: %#v", p, i)
 			continue
 		}
 		is = append(is, i)
@@ -402,8 +402,10 @@ func (ti tokopediaSearchProduct) toItem() model.Item {
 		imageURL = "https://images.tokopedia.net" +
 			strings.Replace(parsedImageURL.Path, "/200-square/", "/500-square/", 1)
 	}
-	rating, err := strconv.ParseFloat(ti.RatingAverage, 64)
-	if err != nil {
+	var rating float64
+	if ti.RatingAverage == "" {
+		rating = 0
+	} else if rating, err = strconv.ParseFloat(ti.RatingAverage, 64); err != nil {
 		rating = -1
 	}
 	var soldStr string
@@ -412,13 +414,17 @@ func (ti tokopediaSearchProduct) toItem() model.Item {
 			soldStr, _ = v["title"].(string)
 		}
 	}
-	soldStr = strings.TrimPrefix(soldStr, "Terjual ")
-	soldStr = strings.TrimSuffix(soldStr, "+")
-	soldStr = strings.ReplaceAll(soldStr, " rb", "000")
-	soldStr = strings.ReplaceAll(soldStr, " jt", "000000")
-	sold, err := strconv.Atoi(soldStr)
-	if err != nil {
-		sold = -1
+	var sold int
+	if soldStr == "" {
+		sold = 0
+	} else {
+		soldStr = strings.TrimPrefix(soldStr, "Terjual ")
+		soldStr = strings.TrimSuffix(soldStr, "+")
+		soldStr = strings.ReplaceAll(soldStr, " rb", "000")
+		soldStr = strings.ReplaceAll(soldStr, " jt", "000000")
+		if sold, err = strconv.Atoi(soldStr); err != nil {
+			sold = -1
+		}
 	}
 	return model.Item{
 		Site:       "Tokopedia",
