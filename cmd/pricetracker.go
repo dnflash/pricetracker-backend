@@ -116,9 +116,9 @@ func runApp() error {
 
 	if config.ServerEnabled {
 		httpSrv := &http.Server{
-			Handler:        srv.Router(),
+			Handler:        http.TimeoutHandler(srv.Router(), 15*time.Second, http.StatusText(http.StatusServiceUnavailable)),
 			Addr:           config.ServerAddress,
-			WriteTimeout:   15 * time.Second,
+			WriteTimeout:   20 * time.Second,
 			ReadTimeout:    15 * time.Second,
 			IdleTimeout:    60 * time.Second,
 			MaxHeaderBytes: 1024,
