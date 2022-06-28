@@ -58,9 +58,9 @@ type blibliProductDescriptionResponse struct {
 
 func (c Client) BlibliGetItem(url string) (model.Item, error) {
 	var i model.Item
-	sku, err := blibliGetSKU(url)
+	sku, err := c.blibliGetSKU(url)
 	if err != nil {
-		return i, fmt.Errorf("failed getting SKU from URL: %#v, err: %v", url, err)
+		return i, fmt.Errorf("%w: failed getting SKU from URL: %#v, err: %v", ErrBlibliItemNotFound, url, err)
 	}
 	apiURL := fmt.Sprintf("https://www.blibli.com/backend/product-detail/products/%s/_summary", sku)
 	req, err := newRequest(http.MethodGet, apiURL, nil)
@@ -202,23 +202,52 @@ func htmlBodyFinder(node *html.Node) (*html.Node, error) {
 	return nil, errors.New("traverse limit exceeded")
 }
 
-func blibliGetSKU(urlStr string) (string, error) {
+func (c Client) blibliGetSKU(urlStr string) (string, error) {
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-		return "", fmt.Errorf("error parsing URL: %w", err)
+		return "", fmt.Errorf("error parsing URL: %v", err)
 	}
-	if strings.TrimPrefix(parsedURL.Host, "www.") != "blibli.com" {
-		return "", fmt.Errorf("invalid URL host: %#v", parsedURL.Host)
-	}
-	sp := strings.Split(parsedURL.Path, "/")
-	if len(sp) == 4 || len(sp) == 5 {
-		sku := sp[len(sp)-1]
-		if normSKU, ok := blibliNormalizeSKU(sku); ok {
-			return normSKU, nil
+	if parsedURL.Host == "blibli.app.link" && len(parsedURL.Path) > 5 {
+		if resolvedURL, err := c.blibliResolveShareLink("https://blibli.app.link" + parsedURL.Path); err != nil {
+			return "", fmt.Errorf("failed to get SKU from share link, err: %v", err)
+		} else if parsedURL, err = url.Parse(resolvedURL); err != nil {
+			return "", fmt.Errorf("error parsing resolved URL from share link, err: %v", err)
 		}
-		return "", fmt.Errorf("invalid SKU: %#v", sku)
 	}
-	return "", fmt.Errorf("invalid URL path: %#v", parsedURL.Path)
+	if parsedURL.Host == "www.blibli.com" || parsedURL.Host == "blibli.com" {
+		sp := strings.Split(parsedURL.Path, "/")
+		if len(sp) == 4 || len(sp) == 5 {
+			sku := sp[len(sp)-1]
+			if normSKU, ok := blibliNormalizeSKU(sku); ok {
+				return normSKU, nil
+			}
+			return "", fmt.Errorf("invalid SKU: %#v, from URL: %s", sku, parsedURL)
+		}
+	}
+	return "", fmt.Errorf("invalid URL: %s", parsedURL)
+}
+
+func (c Client) blibliResolveShareLink(url string) (string, error) {
+	req, err := newRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("error creating request from URL: %s, err: %v", url, err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 Windows")
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error doing request, req:\n%#v,\nerr: %v", req, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	bodyRdr := io.LimitReader(resp.Body, 500*1024)
+	if resp.StatusCode != http.StatusTemporaryRedirect {
+		body, _ := io.ReadAll(bodyRdr)
+		return "", fmt.Errorf("failed resolving share link, url: %s, status is not %d, resp:\n%#v,\nbody:\n%s,\nreq:\n%#v",
+			url, http.StatusTemporaryRedirect, resp, misc.BytesLimit(body, 500), req)
+	}
+	_, _ = io.Copy(io.Discard, bodyRdr)
+	return resp.Header.Get("Location"), nil
 }
 
 func blibliNormalizeSKU(sku string) (string, bool) {

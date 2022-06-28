@@ -39,7 +39,7 @@ func siteTypeAndCleanURL(urlStr string) (siteType, string, error) {
 		return siteShopee, cleanURL, nil
 	} else if parsedURL.Host == "www.tokopedia.com" || parsedURL.Host == "tokopedia.com" || parsedURL.Host == "tokopedia.link" {
 		return siteTokopedia, cleanURL, nil
-	} else if parsedURL.Host == "www.blibli.com" {
+	} else if parsedURL.Host == "www.blibli.com" || parsedURL.Host == "blibli.com" || parsedURL.Host == "blibli.app.link" {
 		return siteBlibli, cleanURL, nil
 	}
 	return siteTypeInvalid, "", errors.Errorf("invalid site url: %s", cleanURL)
