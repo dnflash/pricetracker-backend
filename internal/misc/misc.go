@@ -3,6 +3,7 @@ package misc
 import (
 	"golang.org/x/exp/constraints"
 	"regexp"
+	"strings"
 )
 
 func Max[T constraints.Ordered](a, b T) T {
@@ -45,10 +46,21 @@ func BytesLimit(bs []byte, n int) []byte {
 	return bs
 }
 
-var nonAlphanumericRegex = regexp.MustCompile(`[^A-Za-z\d ]+`)
-var extraSpaceRegex = regexp.MustCompile(`  +`)
+var NonAlphanumericRegex = regexp.MustCompile(`[^A-Za-z\d ]+`)
+var ExtraSpaceRegex = regexp.MustCompile(`  +`)
+var HTMLTagRegex = regexp.MustCompile(`<.*?>`)
+var NumRegex = regexp.MustCompile(`\d+`)
 
 func CleanString(s string) string {
-	res := nonAlphanumericRegex.ReplaceAllString(s, " ")
-	return extraSpaceRegex.ReplaceAllString(res, " ")
+	res := NonAlphanumericRegex.ReplaceAllLiteralString(s, " ")
+	res = ExtraSpaceRegex.ReplaceAllLiteralString(res, " ")
+	res = strings.TrimSpace(res)
+	return res
+}
+
+func IsNum(s string) bool {
+	if s == "" {
+		return false
+	}
+	return len(NumRegex.FindString(s)) == len(s)
 }

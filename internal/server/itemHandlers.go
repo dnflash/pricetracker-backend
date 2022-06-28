@@ -65,20 +65,20 @@ func (s Server) itemAdd() http.HandlerFunc {
 		}
 
 		req := request{}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
 			s.Logger.Debugf("itemAdd: Error decoding JSON, err: %v", err)
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
-		siteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
+		urlSiteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
 		if err != nil {
 			s.Logger.Debugf("itemAdd: Bad url: %s, err: %v", req.URL, err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		var ecommerceItem model.Item
-		switch siteType {
+		switch urlSiteType {
 		case siteShopee:
 			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
@@ -109,6 +109,23 @@ func (s Server) itemAdd() http.HandlerFunc {
 					return
 				} else {
 					s.Logger.Errorf("itemAdd: Error getting Tokopedia item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
+				}
+			}
+		case siteBlibli:
+			ecommerceItem, err = s.Client.BlibliGetItem(cleanURL)
+			if err != nil {
+				if errors.Is(err, client.ErrBlibli) {
+					s.Logger.Errorf("itemAdd: Error getting Blibli item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+					return
+				} else if errors.Is(err, client.ErrBlibliItemNotFound) {
+					s.Logger.Debugf("itemAdd: Item not found when getting Blibli item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+					return
+				} else {
+					s.Logger.Errorf("itemAdd: Error getting Blibli item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					return
 				}
@@ -203,7 +220,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 			return
 		}
 
-		siteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
+		urlSiteType, cleanURL, err := siteTypeAndCleanURL(req.URL)
 		if err != nil {
 			s.Logger.Debugf("itemCheck: Bad url: %s, err: %v", req.URL, err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -211,7 +228,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 		}
 
 		var ecommerceItem model.Item
-		switch siteType {
+		switch urlSiteType {
 		case siteShopee:
 			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
 			if err != nil {
@@ -242,6 +259,23 @@ func (s Server) itemCheck() http.HandlerFunc {
 					return
 				} else {
 					s.Logger.Errorf("itemCheck: Error getting Tokopedia item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
+				}
+			}
+		case siteBlibli:
+			ecommerceItem, err = s.Client.BlibliGetItem(cleanURL)
+			if err != nil {
+				if errors.Is(err, client.ErrBlibli) {
+					s.Logger.Errorf("itemCheck: Error getting Blibli item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+					return
+				} else if errors.Is(err, client.ErrBlibliItemNotFound) {
+					s.Logger.Debugf("itemCheck: Item not found when getting Blibli item with url: %s, err: %v", cleanURL, err)
+					http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+					return
+				} else {
+					s.Logger.Errorf("itemCheck: Error getting Blibli item with url: %s, err: %v", cleanURL, err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					return
 				}

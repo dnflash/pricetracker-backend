@@ -31,13 +31,13 @@ func (s Server) fetchData(ctx context.Context) {
 			itemName = i.Name
 		}
 		s.Logger.Infof("fetchData: Fetching data for Item: %s, ID: %s", itemName, i.ID.Hex())
-		siteType, cleanURL, err := siteTypeAndCleanURL(i.URL)
+		urlSiteType, cleanURL, err := siteTypeAndCleanURL(i.URL)
 		if err != nil {
 			s.Logger.Errorf("fetchData: Error getting site type from url: %s, err: %v", i.URL, err)
 			continue
 		}
 		var ecommerceItem model.Item
-		switch siteType {
+		switch urlSiteType {
 		case siteShopee:
 			s.Logger.Debugf("fetchData: Getting Item data from Shopee for Item: %s, ID: %s", itemName, i.ID.Hex())
 			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
@@ -50,6 +50,13 @@ func (s Server) fetchData(ctx context.Context) {
 			ecommerceItem, err = s.Client.TokopediaGetItem(cleanURL)
 			if err != nil {
 				s.Logger.Errorf("fetchData: Error getting Tokopedia item from url: %s, err: %v", cleanURL, err)
+				continue
+			}
+		case siteBlibli:
+			s.Logger.Debugf("fetchData: Getting Item data from Blibli for Item: %s, ID: %s", itemName, i.ID.Hex())
+			ecommerceItem, err = s.Client.BlibliGetItem(cleanURL)
+			if err != nil {
+				s.Logger.Errorf("fetchData: Error getting Blibli item from url: %s, err: %v", cleanURL, err)
 				continue
 			}
 		}
