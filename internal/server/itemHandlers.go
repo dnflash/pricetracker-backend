@@ -585,6 +585,7 @@ func (s Server) itemSearch() http.HandlerFunc {
 		}
 		var shopeeItems []model.Item
 		var tokopediaItems []model.Item
+		var blibliItems []model.Item
 		for i, q := range qa {
 			if q != "" {
 				if len(shopeeItems) < 3 {
@@ -613,15 +614,30 @@ func (s Server) itemSearch() http.HandlerFunc {
 						s.Logger.Errorf("itemSearch: Error searching Tokopedia with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
 					}
 				}
+				if len(blibliItems) < 3 {
+					is, err := s.Client.BlibliSearch(q)
+					if err == nil {
+						if len(is) > 0 && len(blibliItems) > 0 {
+							blibliItems = mergeItemSlices(blibliItems, is)
+						} else if len(blibliItems) == 0 {
+							blibliItems = is
+						}
+						s.Logger.Debugf("itemSearch: Searched Blibli with q%d: %#v, %d item(s) found, TraceID: %s", i+1, q, len(is), tid)
+					} else {
+						s.Logger.Errorf("itemSearch: Error searching Blibli with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
+					}
+				}
 			} else if bc != "" {
 				s.Logger.Debugf("itemSearch: Barcode %#v q%d is empty, TraceID: %s", bc, i+1, tid)
 			}
 		}
 		shopeeItems = shopeeItems[:misc.Min(len(shopeeItems), 3)]
 		tokopediaItems = tokopediaItems[:misc.Min(len(tokopediaItems), 3)]
-		items := make([]model.Item, 0, len(shopeeItems)+len(tokopediaItems))
+		blibliItems = blibliItems[:misc.Min(len(blibliItems), 3)]
+		items := make([]model.Item, 0, len(shopeeItems)+len(tokopediaItems)+len(blibliItems))
 		items = append(items, shopeeItems...)
 		items = append(items, tokopediaItems...)
+		items = append(items, blibliItems...)
 		s.writeJsonResponse(w, response(items), http.StatusOK)
 	}
 }
