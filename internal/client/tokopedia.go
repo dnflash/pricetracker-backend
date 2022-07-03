@@ -2,8 +2,10 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/go-redis/redis/v9"
 	"github.com/pkg/errors"
 	"html"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"pricetracker/internal/model"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var ErrTokopedia = errors.New("Tokopedia error")
@@ -21,7 +24,8 @@ var ErrTokopediaItemNotFound = errors.New("Tokopedia item not found")
 var errTokopediaNotPDP = errors.New("Tokopedia page is not PDP")
 var errTokopediaFieldKeyNotFound = errors.New("Tokopedia field key not found")
 
-func (c Client) TokopediaGetItem(url string) (model.Item, error) {
+func (c Client) TokopediaGetItem(url string, useCache bool) (model.Item, error) {
+	ctx := context.TODO()
 	var i model.Item
 	normURL, isShareLink, err := tokopediaNormalizeURL(url)
 	if err != nil {
@@ -33,10 +37,30 @@ func (c Client) TokopediaGetItem(url string) (model.Item, error) {
 			return i, fmt.Errorf("%w: error resolving share link, err: %v", ErrTokopediaItemNotFound, err)
 		}
 	}
+
+	cacheKey := "TGI-" + normURL
+	if useCache {
+		cached, err := c.Redis.Get(ctx, cacheKey).Result()
+		if err == nil {
+			c.Logger.Infof("TokopediaGetItem: Cache found, key: %s", cacheKey)
+			if err = json.Unmarshal([]byte(cached), &i); err == nil {
+				return i, nil
+			} else {
+				c.Logger.Errorf("TokopediaGetItem: Error unmarshalling cache, key: %s, err: %v", cacheKey, err)
+			}
+		} else {
+			if err != redis.Nil {
+				c.Logger.Errorf("TokopediaGetItem: Error getting getting Redis cache with key: %s, err: %v", cacheKey, err)
+			}
+		}
+	}
+
 	req, err := newRequest(http.MethodGet, normURL, nil)
 	if err != nil {
 		return i, errors.Wrapf(err, "error creating request from URL: %s", normURL)
 	}
+
+	c.Logger.Infof("TokopediaGetItem: Sending request to %s", normURL)
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		return i, errors.Wrapf(ErrTokopedia, "error doing request:\n%#v,\nerr: %v", req, err)
@@ -73,6 +97,15 @@ func (c Client) TokopediaGetItem(url string) (model.Item, error) {
 		return i, errors.Wrapf(err, "error parsing product page, status: %s, body:\n%s,\nreq:\n%#v",
 			resp.Status, misc.BytesLimit(body, 500), req)
 	}
+
+	if iJSON, err := json.Marshal(i); err != nil {
+		c.Logger.Errorf("TokopediaGetItem: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+	} else {
+		if err = c.Redis.Set(ctx, cacheKey, iJSON, 1*time.Hour).Err(); err != nil {
+			c.Logger.Errorf("TokopediaGetItem: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+		}
+	}
+
 	return i, nil
 }
 
@@ -313,7 +346,25 @@ type tokopediaSearchProductShop struct {
 }
 
 func (c Client) TokopediaSearch(query string) ([]model.Item, error) {
+	ctx := context.TODO()
+	var is []model.Item
 	apiURL := "https://gql.tokopedia.com/graphql/SearchProductQueryV4"
+
+	cacheKey := "TS-" + query
+	cached, err := c.Redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		c.Logger.Infof("TokopediaSearch: Cache found, key: %s", cacheKey)
+		if err = json.Unmarshal([]byte(cached), &is); err == nil {
+			return is, nil
+		} else {
+			c.Logger.Errorf("TokopediaSearch: Error unmarshalling cache, key: %s, err: %v", cacheKey, err)
+		}
+	} else {
+		if err != redis.Nil {
+			c.Logger.Errorf("TokopediaSearch: Error getting getting Redis cache with key: %s, err: %v", cacheKey, err)
+		}
+	}
+
 	params := url.Values{
 		"device":      []string{"desktop"},
 		"q":           []string{query},
@@ -352,6 +403,8 @@ func (c Client) TokopediaSearch(query string) ([]model.Item, error) {
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Origin", "https://www.tokopedia.com")
+
+	c.Logger.Infof("TokopediaSearch: Sending request to %s", apiURL)
 	resp, err := c.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: error doing request:\n%#v,\nreq body:\n%s,\nerr: %v", ErrTokopedia, req, reqBody, err)
@@ -376,7 +429,7 @@ func (c Client) TokopediaSearch(query string) ([]model.Item, error) {
 	}
 	tokopediaProducts := searchResp[0].Data.AceSearch.Data.Products
 
-	is := make([]model.Item, 0, len(tokopediaProducts))
+	is = make([]model.Item, 0, len(tokopediaProducts))
 	for _, p := range tokopediaProducts {
 		i := p.toItem()
 		if i.URL == "" || i.Price == -1 || i.ImageURL == "" || i.Rating == -1 || i.Sold == -1 {
@@ -385,6 +438,15 @@ func (c Client) TokopediaSearch(query string) ([]model.Item, error) {
 		}
 		is = append(is, i)
 	}
+
+	if isJSON, err := json.Marshal(is); err != nil {
+		c.Logger.Errorf("TokopediaSearch: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, is, err)
+	} else {
+		if err = c.Redis.Set(ctx, cacheKey, isJSON, 12*time.Hour).Err(); err != nil {
+			c.Logger.Errorf("TokopediaSearch: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, is, err)
+		}
+	}
+
 	return is, nil
 }
 

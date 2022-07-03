@@ -1,14 +1,17 @@
 package client
 
 import (
+	"github.com/go-redis/redis/v9"
 	"io"
 	"net/http"
 )
 
 type Client struct {
 	*http.Client
-	FCMKey string
-	Logger logger
+	ShopeeClient *http.Client
+	Redis        *redis.Client
+	Logger       logger
+	FCMKey       string
 }
 
 type logger interface {

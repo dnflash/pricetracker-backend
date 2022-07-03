@@ -1,8 +1,10 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/go-redis/redis/v9"
 	"github.com/pkg/errors"
 	"io"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 	"pricetracker/internal/model"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var ErrShopee = errors.New("Shopee error")
@@ -48,19 +51,36 @@ type shopeeSearchItem struct {
 	AdsID     int        `json:"adsid"`
 }
 
-func (c Client) ShopeeGetItem(url string) (model.Item, error) {
+func (c Client) ShopeeGetItem(url string, useCache bool) (model.Item, error) {
+	ctx := context.TODO()
 	var i model.Item
 	shopID, itemID, ok := shopeeGetShopAndItemID(url)
 	if !ok {
 		return i, errors.Wrapf(ErrShopeeItemNotFound, "error getting ShopID and ItemID from URL: %s", url)
 	}
 	apiURL := fmt.Sprintf("https://shopee.co.id/api/v4/item/get?shopid=%s&itemid=%s", shopID, itemID)
-
+	cacheKey := "SGI-" + apiURL
+	if useCache {
+		cached, err := c.Redis.Get(ctx, cacheKey).Result()
+		if err == nil {
+			c.Logger.Infof("ShopeeGetItem: Cache found, key: %s", cacheKey)
+			if err = json.Unmarshal([]byte(cached), &i); err == nil {
+				return i, nil
+			} else {
+				c.Logger.Errorf("ShopeeGetItem: Error unmarshalling cache, key: %s, err: %v", cacheKey, err)
+			}
+		} else {
+			if err != redis.Nil {
+				c.Logger.Errorf("ShopeeGetItem: Error getting getting Redis cache with key: %s, err: %v", cacheKey, err)
+			}
+		}
+	}
 	req, err := shopeeNewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return i, err
 	}
-	resp, err := c.Client.Do(req)
+	c.Logger.Infof("ShopeeGetItem: Sending request to %s", apiURL)
+	resp, err := c.ShopeeClient.Do(req)
 	if err != nil {
 		return i, errors.Wrapf(ErrShopee, "error doing request:\n%#v,\nerr: %v", req, err)
 	}
@@ -87,7 +107,16 @@ func (c Client) ShopeeGetItem(url string) (model.Item, error) {
 		return i, errors.Wrapf(ErrShopee, "error getting data from ShopeeItemAPI, status: %s, body:\n%s,\nreq:\n%#v", resp.Status, body, req)
 	}
 
-	return shopeeItemResp.Data.toItem(), nil
+	i = shopeeItemResp.Data.toItem()
+	if iJSON, err := json.Marshal(i); err != nil {
+		c.Logger.Errorf("ShopeeGetItem: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+	} else {
+		if err = c.Redis.Set(ctx, cacheKey, iJSON, 1*time.Hour).Err(); err != nil {
+			c.Logger.Errorf("ShopeeGetItem: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+		}
+	}
+
+	return i, nil
 }
 
 func shopeeGetShopAndItemID(urlStr string) (shopID string, itemID string, ok bool) {
@@ -108,8 +137,25 @@ func shopeeGetShopAndItemID(urlStr string) (shopID string, itemID string, ok boo
 }
 
 func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
+	ctx := context.TODO()
 	var is []model.Item
 	apiURL := "https://shopee.co.id/api/v4/search/search_items"
+
+	cacheKey := "SS-" + query
+	cached, err := c.Redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		c.Logger.Infof("ShopeeSearch: Cache found, key: %s", cacheKey)
+		if err = json.Unmarshal([]byte(cached), &is); err == nil {
+			return is, nil
+		} else {
+			c.Logger.Errorf("ShopeeSearch: Error unmarshalling cache, key: %s, err: %v", cacheKey, err)
+		}
+	} else {
+		if err != redis.Nil {
+			c.Logger.Errorf("ShopeeSearch: Error getting getting Redis cache with key: %s, err: %v", cacheKey, err)
+		}
+	}
+
 	req, err := shopeeNewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return is, err
@@ -126,7 +172,8 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 	}.Encode()
 	req.URL.RawQuery = strings.ReplaceAll(qp, "+", "%20")
 
-	resp, err := c.Client.Do(req)
+	c.Logger.Infof("ShopeeSearch: Sending request to %s", apiURL)
+	resp, err := c.ShopeeClient.Do(req)
 	if err != nil {
 		return is, errors.Wrapf(ErrShopee, "error doing request:\n%#v,\nerr: %v", req, err)
 	}
@@ -156,6 +203,15 @@ func (c Client) ShopeeSearch(query string) ([]model.Item, error) {
 		}
 		is = append(is, searchItem.ItemBasic.toItem())
 	}
+
+	if isJSON, err := json.Marshal(is); err != nil {
+		c.Logger.Errorf("ShopeeSearch: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, is, err)
+	} else {
+		if err = c.Redis.Set(ctx, cacheKey, isJSON, 12*time.Hour).Err(); err != nil {
+			c.Logger.Errorf("ShopeeSearch: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, is, err)
+		}
+	}
+
 	return is, nil
 }
 
@@ -180,13 +236,13 @@ func shopeeNewRequest(method string, url string, body io.Reader) (*http.Request,
 	if err != nil {
 		return nil, errors.Wrapf(err, "error creating request from URL: %s", url)
 	}
-	req.AddCookie(&http.Cookie{
-		Name:  "SPC_U",
-		Value: "-",
-	})
-	req.AddCookie(&http.Cookie{
-		Name:  "SPC_F",
-		Value: "-",
-	})
+	//req.AddCookie(&http.Cookie{
+	//	Name:  "SPC_U",
+	//	Value: "-",
+	//})
+	//req.AddCookie(&http.Cookie{
+	//	Name:  "SPC_F",
+	//	Value: "-",
+	//})
 	return req, nil
 }

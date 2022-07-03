@@ -80,3 +80,17 @@ func (db Database) ItemsFindAll(ctx context.Context) ([]model.Item, error) {
 	}
 	return is, nil
 }
+
+func (db Database) ItemsFindWithSite(ctx context.Context, site string) ([]model.Item, error) {
+	var is []model.Item
+	cur, err := db.Collection(CollectionItems).Find(ctx, bson.M{
+		"site": site,
+	})
+	if err != nil {
+		return nil, errors.WithMessagef(err, "error getting cursor to find all Items for site: %s", site)
+	}
+	if err = cur.All(ctx, &is); err != nil {
+		return nil, errors.WithMessagef(err, "error getting all Items from cursor for site: %s", site)
+	}
+	return is, nil
+}

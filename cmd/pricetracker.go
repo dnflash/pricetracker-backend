@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"github.com/go-redis/redis/v9"
 	"io"
 	"net/http"
 	"os"
@@ -86,7 +88,36 @@ func runApp() error {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.MaxConnsPerHost = 8
 	t.MaxIdleConnsPerHost = 8
-	t.IdleConnTimeout = 180 * time.Second
+	t.IdleConnTimeout = 100 * time.Second
+
+	t2 := t.Clone()
+	t2.TLSClientConfig = &tls.Config{
+		NextProtos: nil,
+		//CipherSuites: []uint16{
+		//	tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+		//	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		//	tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+		//	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		//	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		//	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		//},
+		SessionTicketsDisabled: false,
+		MaxVersion:             tls.VersionTLS12,
+		MinVersion:             tls.VersionTLS12,
+		//CurvePreferences:            []tls.CurveID{tls.CurveP384},
+		DynamicRecordSizingDisabled: false,
+		Renegotiation:               0,
+		KeyLogWriter:                nil,
+	}
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	defer func() {
+		if err := rdb.Close(); err != nil {
+			appLogger.Error("Error closing Redis client:", err)
+		}
+	}()
 	srv := server.Server{
 		DB: database.Database{Database: dbConn.Database(database.Name)},
 		Client: client.Client{
@@ -95,10 +126,18 @@ func runApp() error {
 				CheckRedirect: func(req *http.Request, via []*http.Request) error {
 					return http.ErrUseLastResponse
 				},
-				Transport: t,
+				Transport: t2,
 			},
-			FCMKey: config.FCMKey,
+			ShopeeClient: &http.Client{
+				Timeout: 10 * time.Second,
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+				Transport: t2,
+			},
+			Redis:  rdb,
 			Logger: appLogger,
+			FCMKey: config.FCMKey,
 		},
 		Logger:        appLogger,
 		AuthSecretKey: config.AuthSecretKey,
@@ -111,7 +150,7 @@ func runApp() error {
 
 	if config.FetcherEnabled {
 		appLogger.Info("Starting fetcher with interval:", config.FetchDataInterval)
-		go srv.FetchDataInInterval(appContext, time.NewTicker(config.FetchDataInterval))
+		go srv.FetchDataInInterval(appContext, config.FetchDataInterval)
 	}
 
 	if config.ServerEnabled {
@@ -124,8 +163,13 @@ func runApp() error {
 			MaxHeaderBytes: 1024,
 		}
 		appLogger.Info("Serving on", httpSrv.Addr)
+		//if err = httpSrv.ListenAndServeTLS(
+		//	"/etc/letsencrypt/live/trackee.xyz/fullchain.pem",
+		//	"/etc/letsencrypt/live/trackee.xyz/privkey.pem",
+		//); err != nil {
+		//	appLogger.Errorf("Error listen and serve TLS: %v", err)
+		//}
 		return httpSrv.ListenAndServe()
 	}
-
 	select {}
 }

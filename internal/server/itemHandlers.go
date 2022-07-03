@@ -80,7 +80,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 		var ecommerceItem model.Item
 		switch urlSiteType {
 		case siteShopee:
-			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
+			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL, true)
 			if err != nil {
 				if errors.Is(err, client.ErrShopee) {
 					s.Logger.Errorf("itemAdd: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
@@ -97,7 +97,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 				}
 			}
 		case siteTokopedia:
-			ecommerceItem, err = s.Client.TokopediaGetItem(cleanURL)
+			ecommerceItem, err = s.Client.TokopediaGetItem(cleanURL, true)
 			if err != nil {
 				if errors.Is(err, client.ErrTokopedia) {
 					s.Logger.Errorf("itemAdd: Error getting Tokopedia item with url: %s, err: %v", cleanURL, err)
@@ -114,7 +114,7 @@ func (s Server) itemAdd() http.HandlerFunc {
 				}
 			}
 		case siteBlibli:
-			ecommerceItem, err = s.Client.BlibliGetItem(cleanURL)
+			ecommerceItem, err = s.Client.BlibliGetItem(cleanURL, true)
 			if err != nil {
 				if errors.Is(err, client.ErrBlibli) {
 					s.Logger.Errorf("itemAdd: Error getting Blibli item with url: %s, err: %v", cleanURL, err)
@@ -230,7 +230,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 		var ecommerceItem model.Item
 		switch urlSiteType {
 		case siteShopee:
-			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL)
+			ecommerceItem, err = s.Client.ShopeeGetItem(cleanURL, true)
 			if err != nil {
 				if errors.Is(err, client.ErrShopee) {
 					s.Logger.Errorf("itemCheck: Error getting Shopee item with url: %s, err: %v", cleanURL, err)
@@ -247,7 +247,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 				}
 			}
 		case siteTokopedia:
-			ecommerceItem, err = s.Client.TokopediaGetItem(cleanURL)
+			ecommerceItem, err = s.Client.TokopediaGetItem(cleanURL, true)
 			if err != nil {
 				if errors.Is(err, client.ErrTokopedia) {
 					s.Logger.Errorf("itemCheck: Error getting Tokopedia item with url: %s, err: %v", cleanURL, err)
@@ -264,7 +264,7 @@ func (s Server) itemCheck() http.HandlerFunc {
 				}
 			}
 		case siteBlibli:
-			ecommerceItem, err = s.Client.BlibliGetItem(cleanURL)
+			ecommerceItem, err = s.Client.BlibliGetItem(cleanURL, true)
 			if err != nil {
 				if errors.Is(err, client.ErrBlibli) {
 					s.Logger.Errorf("itemCheck: Error getting Blibli item with url: %s, err: %v", cleanURL, err)

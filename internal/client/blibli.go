@@ -2,9 +2,11 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-redis/redis/v9"
 	"golang.org/x/net/html"
 	"io"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"pricetracker/internal/model"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var ErrBlibli = errors.New("Blibli error")
@@ -57,18 +60,38 @@ type blibliProductDescriptionResponse struct {
 	} `json:"data"`
 }
 
-func (c Client) BlibliGetItem(url string) (model.Item, error) {
+func (c Client) BlibliGetItem(url string, useCache bool) (model.Item, error) {
+	ctx := context.TODO()
 	var i model.Item
 	sku, err := c.blibliGetSKU(url)
 	if err != nil {
 		return i, fmt.Errorf("%w: failed getting SKU from URL: %#v, err: %v", ErrBlibliItemNotFound, url, err)
 	}
 	apiURL := fmt.Sprintf("https://www.blibli.com/backend/product-detail/products/%s/_summary", sku)
+	cacheKey := "BGI-" + apiURL
+	if useCache {
+		cached, err := c.Redis.Get(ctx, cacheKey).Result()
+		if err == nil {
+			c.Logger.Infof("BlibliGetItem: Cache found, key: %s", cacheKey)
+			if err = json.Unmarshal([]byte(cached), &i); err == nil {
+				return i, nil
+			} else {
+				c.Logger.Errorf("BlibliGetItem: Error unmarshalling cache, key: %s, err: %v", cacheKey, err)
+			}
+		} else {
+			if err != redis.Nil {
+				c.Logger.Errorf("BlibliGetItem: Error getting getting Redis cache with key: %s, err: %v", cacheKey, err)
+			}
+		}
+	}
+
 	req, err := newRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return i, fmt.Errorf("failed to create request to URL: %s, err: %v", apiURL, err)
 	}
 	req.Header.Add("Accept-Language", "en")
+
+	c.Logger.Infof("BlibliGetItem: Sending request to %s", apiURL)
 	resp, err := c.Do(req)
 	if err != nil {
 		return i, fmt.Errorf("%w: error doing request:\n%#v,\nerr: %v", ErrBlibli, req, err)
@@ -104,6 +127,15 @@ func (c Client) BlibliGetItem(url string) (model.Item, error) {
 	if err != nil {
 		return i, fmt.Errorf("error getting Blibli product description, Item: %+v, err: %w", i, err)
 	}
+
+	if iJSON, err := json.Marshal(i); err != nil {
+		c.Logger.Errorf("BlibliGetItem: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+	} else {
+		if err = c.Redis.Set(ctx, cacheKey, iJSON, 1*time.Hour).Err(); err != nil {
+			c.Logger.Errorf("BlibliGetItem: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+		}
+	}
+
 	return i, nil
 }
 
@@ -334,8 +366,25 @@ type blibliSearchProduct struct {
 }
 
 func (c Client) BlibliSearch(query string) ([]model.Item, error) {
+	ctx := context.TODO()
 	var is []model.Item
 	apiURL := "https://www.blibli.com/backend/search/products"
+
+	cacheKey := "BS-" + query
+	cached, err := c.Redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		c.Logger.Infof("BlibliSearch: Cache found, key: %s", cacheKey)
+		if err = json.Unmarshal([]byte(cached), &is); err == nil {
+			return is, nil
+		} else {
+			c.Logger.Errorf("BlibliSearch: Error unmarshalling cache, key: %s, err: %v", cacheKey, err)
+		}
+	} else {
+		if err != redis.Nil {
+			c.Logger.Errorf("BlibliSearch: Error getting getting Redis cache with key: %s, err: %v", cacheKey, err)
+		}
+	}
+
 	req, err := newRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return is, fmt.Errorf("failed to create request to URL: %s, err: %v", apiURL, err)
@@ -349,6 +398,8 @@ func (c Client) BlibliSearch(query string) ([]model.Item, error) {
 	}.Encode()
 	req.URL.RawQuery = strings.ReplaceAll(qp, "+", "%20")
 	req.Header.Add("Accept-Language", "en")
+
+	c.Logger.Infof("BlibliSearch: Sending request to %s", apiURL)
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		return is, fmt.Errorf("%w: error doing request:\n%#v,\nerr: %v", ErrBlibli, req, err)
@@ -382,6 +433,15 @@ func (c Client) BlibliSearch(query string) ([]model.Item, error) {
 		}
 		is = append(is, i)
 	}
+
+	if isJSON, err := json.Marshal(is); err != nil {
+		c.Logger.Errorf("BlibliSearch: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, is, err)
+	} else {
+		if err = c.Redis.Set(ctx, cacheKey, isJSON, 12*time.Hour).Err(); err != nil {
+			c.Logger.Errorf("BlibliSearch: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, is, err)
+		}
+	}
+
 	return is, nil
 }
 
