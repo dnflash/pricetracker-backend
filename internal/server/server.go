@@ -17,6 +17,7 @@ type logger interface {
 	Debug(v ...any)
 	Info(v ...any)
 	Error(v ...any)
+	Tracef(format string, v ...any)
 	Debugf(format string, v ...any)
 	Infof(format string, v ...any)
 	Errorf(format string, v ...any)

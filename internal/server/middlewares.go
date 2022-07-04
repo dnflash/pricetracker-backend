@@ -53,8 +53,8 @@ func (s Server) loggingMw(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		traceID := uuid.NewString()
-		s.Logger.Debugf("loggingMw: Incoming request %s %s from %s, UA: %s, TraceID: %s",
-			r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent(), traceID)
+		s.Logger.Debugf("loggingMw: New incoming request %s %s from %s, UA: %s, Host: %#v, TraceID: %s",
+			r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent(), r.Host, traceID)
 
 		defer func() {
 			if re := recover(); re != nil {
@@ -66,7 +66,7 @@ func (s Server) loggingMw(next http.Handler) http.Handler {
 		tc := traceContext{traceID: traceID}
 		next.ServeHTTP(w, r.WithContext(setTraceContext(r.Context(), tc)))
 
-		s.Logger.Debugf("loggingMw: Incoming request %s %s took %dms, TraceID: %s",
+		s.Logger.Tracef("loggingMw: Incoming request %s %s took %dms, TraceID: %s",
 			r.Method, r.URL.Path, time.Now().Sub(start).Milliseconds(), traceID)
 	})
 }
