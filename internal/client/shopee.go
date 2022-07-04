@@ -1,18 +1,24 @@
 package client
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/pkg/errors"
 	"io"
 	"net/http"
 	"net/url"
+	"pricetracker/internal/model"
+	"strconv"
 	"strings"
 )
 
+var ErrShopeeItem = errors.New("failed getting Shopee item")
+var ErrShopeeItemNotFound = errors.New("Shopee item not found")
+
 type ShopeeItemResponse struct {
-	Data ShopeeItemResponseData `json:"data"`
+	Error      int                     `json:"error"`
+	Data       *ShopeeItemResponseData `json:"data"`
+	ActionType int                     `json:"action_type"`
 }
 
 type ShopeeItemResponseData struct {
@@ -24,42 +30,69 @@ type ShopeeItemResponseData struct {
 	ImageURL string `json:"image"`
 }
 
-func (c Client) ShopeeGetItem(url string) (ShopeeItemResponseData, error) {
+func (c Client) ShopeeGetItem(url string) (model.Item, error) {
+	var i model.Item
 	shopID, itemID, ok := shopeeGetShopAndItemID(url)
 	if !ok {
-		return ShopeeItemResponseData{}, errors.Errorf("error getting ShopID and ItemID from URL: %+v", url)
+		return i, errors.Errorf("error getting ShopID and ItemID from URL: %s", url)
 	}
 	apiURL := fmt.Sprintf("https://shopee.co.id/api/v4/item/get?shopid=%s&itemid=%s", shopID, itemID)
 
-	req, err := newGetRequest(apiURL, nil)
+	req, err := newRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
-		return ShopeeItemResponseData{}, errors.Wrapf(err, "error creating request from apiURL: %+v", apiURL)
+		return i, errors.Wrapf(err, "error creating request from apiURL: %s", apiURL)
 	}
-
+	req.AddCookie(&http.Cookie{
+		Name:  "SPC_U",
+		Value: "-",
+	})
+	req.AddCookie(&http.Cookie{
+		Name:  "SPC_F",
+		Value: "-",
+	})
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return ShopeeItemResponseData{}, errors.Wrapf(err, "error doing request: %+v", req)
+		return i, errors.Wrapf(err, "error doing request: %+v", req)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Error("error closing response body", errors.Wrap(err, "error closing response body"))
+			c.Logger.Error("ShopeeGetItem: Error closing response body on request to url: %s, err: %v", req.URL, err)
 		}
 	}()
 
 	shopeeItemResp := ShopeeItemResponse{}
-	bodyReader := http.MaxBytesReader(nil, resp.Body, 300000)
-	body, err := io.ReadAll(bodyReader)
+	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
-		return ShopeeItemResponseData{}, errors.Wrapf(err, "error reading ShopeeItemAPI response body, apiURL: %+v", apiURL)
+		return i, errors.Wrapf(err, "error reading ShopeeItemAPI response body, apiURL: %s", apiURL)
 	}
-	if err = json.NewDecoder(bytes.NewReader(body)).Decode(&shopeeItemResp); err != nil {
-		return ShopeeItemResponseData{}, errors.Wrapf(err,
-			"error decoding ShopeeItemAPI response body, apiURL: %+v, body:\n%+v", apiURL, string(body))
+	if err = json.Unmarshal(body, &shopeeItemResp); err != nil {
+		return i, errors.Wrapf(err,
+			"error unmarshalling ShopeeItemAPI response body, apiURL: %s, body: %s", apiURL, body)
 	}
 
+	if shopeeItemResp.Error == 4 {
+		return i, errors.Wrapf(ErrShopeeItemNotFound, "Shopee item not found, resp: %s", body)
+	}
+	if shopeeItemResp.ActionType != 0 || shopeeItemResp.Data == nil {
+		return i, errors.Wrapf(ErrShopeeItem, "error getting data from ShopeeItemAPI, resp: %s", body)
+	}
+
+	shopeeItemResp.Data.Price /= 100000
 	shopeeItemResp.Data.ImageURL = "https://cf.shopee.co.id/file/" + shopeeItemResp.Data.ImageURL
 
-	return shopeeItemResp.Data, nil
+	shopeeItem := shopeeItemResp.Data
+	i = model.Item{
+		URL:            fmt.Sprintf("https://shopee.co.id/product/%d/%d", shopeeItem.ShopID, shopeeItem.ItemID),
+		Name:           shopeeItem.Name,
+		ProductID:      strconv.Itoa(shopeeItem.ItemID),
+		ProductVariant: "-",
+		Price:          shopeeItem.Price,
+		Stock:          shopeeItem.Stock,
+		ImageURL:       shopeeItem.ImageURL,
+		MerchantName:   strconv.Itoa(shopeeItem.ShopID),
+		Site:           "Shopee",
+	}
+	return i, nil
 }
 
 func shopeeGetShopAndItemID(urlStr string) (shopID string, itemID string, ok bool) {

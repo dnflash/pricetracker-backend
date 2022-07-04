@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
+	"os"
 	"pricetracker/internal/client"
+	"pricetracker/internal/configuration"
 	"pricetracker/internal/database"
 	"pricetracker/internal/logger"
 	"pricetracker/internal/server"
@@ -11,19 +15,59 @@ import (
 )
 
 func main() {
-	dbURI := "mongodb://localhost:27017"
-	serverAddr := "localhost:8888"
-	appLogger := logger.NewLogger(true, true, true)
+	_ = runApp()
+	time.Sleep(10 * time.Second)
+	os.Exit(1)
+}
 
-	appLogger.Info("Connecting to DB at", dbURI)
-	dbConn, err := database.ConnectDB(dbURI)
+func runApp() error {
+	appContext := context.Background()
+	logOutput := io.Writer(os.Stdout)
+	appLogger := logger.New(logger.LevelInfo, logOutput)
+
+	defer func() {
+		if r := recover(); r != nil {
+			appLogger.Errorf("APPLICATION CRASHED: %+v", r)
+		}
+	}()
+
+	config, err := configuration.GetConfig("config.toml")
 	if err != nil {
-		appLogger.Error("Error when connecting to database", err)
-		panic(err)
+		appLogger.Error("Error getting configuration from config.toml:", err)
+		return err
+	}
+
+	if config.LogToFile {
+		logFile, err := os.OpenFile("pricetracker_backend.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			appLogger.Error("Error opening log file:", err)
+			return err
+		}
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				appLogger.Error("Error closing log file:", err)
+			}
+		}()
+		logOutput = io.MultiWriter(logOutput, logFile)
+	}
+	appLogger = logger.New(config.LogLevel, logOutput)
+
+	conf, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		appLogger.Error("Error marshalling Config to JSON:", err)
+		return err
+	}
+	appLogger.Infof("Config:\n%s", conf)
+
+	appLogger.Info("Connecting to DB at", config.DatabaseURI)
+	dbConn, err := database.ConnectDB(appContext, config.DatabaseURI)
+	if err != nil {
+		appLogger.Error("Error connecting to DB:", err)
+		return err
 	}
 	defer func() {
-		if err := dbConn.Disconnect(context.Background()); err != nil {
-			appLogger.Error("Error when disconnecting from database", err)
+		if err := dbConn.Disconnect(appContext); err != nil {
+			appLogger.Error("Error disconnecting from DB:", err)
 		}
 	}()
 
@@ -31,20 +75,25 @@ func main() {
 		DB: database.Database{Database: dbConn.Database(database.Name)},
 		Client: client.Client{
 			Client: &http.Client{Timeout: 15 * time.Second},
+			FCMKey: config.FCMKey,
 			Logger: appLogger,
 		},
-		Logger: appLogger,
+		Logger:        appLogger,
+		AuthSecretKey: config.AuthSecretKey,
 	}
 
-	go srv.FetchDataInInterval(time.NewTicker(60 * time.Second))
+	appLogger.Info("Starting fetcher with interval:", config.FetchDataInterval)
+	go srv.FetchDataInInterval(appContext, time.NewTicker(config.FetchDataInterval))
 
 	httpSrv := &http.Server{
-		Handler:      srv.Router(),
-		Addr:         serverAddr,
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
+		Handler:        srv.Router(),
+		Addr:           config.ServerAddress,
+		WriteTimeout:   15 * time.Second,
+		ReadTimeout:    15 * time.Second,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1024,
 	}
 
 	appLogger.Info("Serving on", httpSrv.Addr)
-	panic(httpSrv.ListenAndServe())
+	return httpSrv.ListenAndServe()
 }
