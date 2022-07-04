@@ -74,19 +74,19 @@ func (c Client) TokopediaGetItem(url string, useCache bool) (model.Item, error) 
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 1024*1024))
 	if err != nil {
 		return i, errors.Wrapf(err,
-			"error reading Tokopedia product page response body, status: %s, body:\n%s,\nreq:\n%#v",
-			resp.Status, misc.BytesLimit(body, 500), req)
+			"error reading Tokopedia product page response body, status: %s, body:\n%s",
+			resp.Status, misc.BytesLimit(body, 500))
 	}
 
 	if resp.StatusCode == http.StatusGone {
 		return i, errors.Wrapf(ErrTokopediaItemNotFound,
-			"Tokopedia item not found, status: %s, body:\n%s,\nreq:\n%#v",
-			resp.Status, misc.BytesLimit(body, 500), req)
+			"Tokopedia item not found, status: %s, body:\n%s",
+			resp.Status, misc.BytesLimit(body, 500))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return i, errors.Wrapf(ErrTokopedia, "error getting item from Tokopedia, status: %s, body:\n%s,\nreq:\n%#v",
-			resp.Status, misc.BytesLimit(body, 500), req)
+		return i, errors.Wrapf(ErrTokopedia, "error getting item from Tokopedia, status: %s, body:\n%s",
+			resp.Status, misc.BytesLimit(body, 500))
 	}
 
 	i, err = tokopediaParseProductPage(body)
@@ -94,8 +94,8 @@ func (c Client) TokopediaGetItem(url string, useCache bool) (model.Item, error) 
 		if errors.Is(err, errTokopediaNotPDP) {
 			return i, errors.Wrapf(ErrTokopediaItemNotFound, "%v", err)
 		}
-		return i, errors.Wrapf(err, "error parsing product page, status: %s, body:\n%s,\nreq:\n%#v",
-			resp.Status, misc.BytesLimit(body, 500), req)
+		return i, errors.Wrapf(err, "error parsing product page, status: %s, body:\n%s",
+			resp.Status, misc.BytesLimit(body, 500))
 	}
 
 	if iJSON, err := json.Marshal(i); err != nil {
@@ -156,8 +156,8 @@ func (c Client) tokopediaResolveShareLink(url string) (string, error) {
 	bodyRdr := io.LimitReader(resp.Body, 500*1024)
 	if resp.StatusCode != http.StatusTemporaryRedirect {
 		body, _ := io.ReadAll(bodyRdr)
-		return "", fmt.Errorf("failed resolving share link, url: %s, status is not %d, resp:\n%#v,\nbody:\n%s,\nreq:\n%#v",
-			url, http.StatusTemporaryRedirect, resp, misc.BytesLimit(body, 500), req)
+		return "", fmt.Errorf("failed resolving share link, url: %s, status is not %d, resp:\n%#v,\nbody:\n%s",
+			url, http.StatusTemporaryRedirect, resp, misc.BytesLimit(body, 500))
 	}
 	_, _ = io.Copy(io.Discard, bodyRdr)
 	normURL, isShareLink, err := tokopediaNormalizeURL(resp.Header.Get("Location"))
@@ -429,20 +429,20 @@ func (c Client) TokopediaSearch(query string) ([]model.Item, error) {
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 300*1024))
 	if err != nil {
 		return nil, fmt.Errorf(
-			"error reading Tokopedia search response body, status: %s, resp body:\n%s,\nreq:\n%#v,\nreq body:\n%s,\nerr: %w",
-			resp.Status, misc.BytesLimit(respBody, 500), req, reqBody, err)
+			"error reading Tokopedia search response body, status: %s, resp body:\n%s,\nreq body:\n%s,\nerr: %w",
+			resp.Status, misc.BytesLimit(respBody, 500), reqBody, err)
 	}
 
 	var searchResp []tokopediaSearchResponse
 	if err = json.Unmarshal(respBody, &searchResp); err != nil {
 		return nil, fmt.Errorf(
-			"failed unmarshalling search response, status: %s, resp body:\n%s,\nreq:\n%#v,\nreq body:\n%s,\nerr: %w",
-			resp.Status, misc.BytesLimit(respBody, 500), req, reqBody, err)
+			"failed unmarshalling search response, status: %s, resp body:\n%s,\nreq body:\n%s,\nerr: %w",
+			resp.Status, misc.BytesLimit(respBody, 500), reqBody, err)
 	}
 	if len(searchResp) == 0 {
 		return nil, fmt.Errorf(
-			"search response body empty, status: %s, resp body:\n%s,\nreq:\n%#v,\nreq body:\n%s",
-			resp.Status, misc.BytesLimit(respBody, 500), req, reqBody)
+			"search response body empty, status: %s, resp body:\n%s,\nreq body:\n%s",
+			resp.Status, misc.BytesLimit(respBody, 500), reqBody)
 	}
 	tokopediaProducts := searchResp[0].Data.AceSearch.Data.Products
 

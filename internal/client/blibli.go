@@ -102,22 +102,22 @@ func (c Client) BlibliGetItem(url string, useCache bool) (model.Item, error) {
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300*1024))
 	if err != nil {
 		return i, fmt.Errorf(
-			"error reading BlibliProductAPI response body, status: %s, body:\n%s,\nreq:\n%#v,\nerr: %v",
-			resp.Status, misc.BytesLimit(body, 2000), req, err)
+			"error reading BlibliProductAPI response body, status: %s, body:\n%s,\nerr: %v",
+			resp.Status, misc.BytesLimit(body, 2000), err)
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return i, fmt.Errorf("%w: status: %s, body:\n%s,\nreq:\n%#v",
-			ErrBlibliItemNotFound, resp.Status, misc.BytesLimit(body, 2000), req)
+		return i, fmt.Errorf("%w: status: %s, body:\n%s",
+			ErrBlibliItemNotFound, resp.Status, misc.BytesLimit(body, 2000))
 	}
 	blibliResp := blibliProductDetailResponse{}
 	if err = json.Unmarshal(body, &blibliResp); err != nil {
 		return i, fmt.Errorf(
-			"error unmarshalling BlibliProductAPI response body, status: %s, body:\n%s,\nreq:\n%#v,\nerr: %v",
-			resp.Status, misc.BytesLimit(body, 2000), req, err)
+			"error unmarshalling BlibliProductAPI response body, status: %s, body:\n%s,\nerr: %v",
+			resp.Status, misc.BytesLimit(body, 2000), err)
 	}
 	if blibliResp.Code != 200 {
-		return i, fmt.Errorf("error getting data from BlibliProductAPI, status: %s, body:\n%s,\nreq:\n%#v",
-			resp.Status, misc.BytesLimit(body, 2000), req)
+		return i, fmt.Errorf("error getting data from BlibliProductAPI, status: %s, body:\n%s",
+			resp.Status, misc.BytesLimit(body, 2000))
 	}
 	i = blibliResp.Data.toItem()
 	if i.ProductID == "" || i.URL == "" || i.ImageURL == "" {
@@ -429,17 +429,21 @@ func (c Client) BlibliSearch(query string) ([]model.Item, error) {
 	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 1000*1024))
 	if err != nil {
 		return is, fmt.Errorf(
-			"error reading BlibliSearchAPI response body, status: %s, body:\n%s,\nreq:\n%#v,\nerr: %v",
-			resp.Status, misc.BytesLimit(body, 2000), req, err)
+			"error reading BlibliSearchAPI response body, status: %s, body:\n%s,\nerr: %v",
+			resp.Status, misc.BytesLimit(body, 2000), err)
 	}
 	if err = json.Unmarshal(body, &blibliSearchResp); err != nil {
 		return is, fmt.Errorf(
-			"error unmarshalling BlibliSearchAPI response body, status: %s, body:\n%s,\nreq:\n%#v,\nerr: %v",
-			resp.Status, misc.BytesLimit(body, 2000), req, err)
+			"error unmarshalling BlibliSearchAPI response body, status: %s, body:\n%s,\nerr: %v",
+			resp.Status, misc.BytesLimit(body, 2000), err)
+	}
+	if blibliSearchResp.Code != 422 {
+		return is, fmt.Errorf("%w: error getting data from BlibliSearchAPI, status: %s, body:\n%s",
+			ErrBlibliItemNotFound, resp.Status, misc.BytesLimit(body, 200))
 	}
 	if blibliSearchResp.Code != 200 {
-		return is, fmt.Errorf("%w: error getting data from BlibliSearchAPI, status: %s, body:\n%s,\nreq:\n%#v",
-			ErrBlibli, resp.Status, misc.BytesLimit(body, 2000), req)
+		return is, fmt.Errorf("%w: error getting data from BlibliSearchAPI, status: %s, body:\n%s",
+			ErrBlibli, resp.Status, misc.BytesLimit(body, 2000))
 	}
 	bsps := blibliSearchResp.Data.Products
 	is = make([]model.Item, 0, len(bsps))

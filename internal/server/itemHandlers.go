@@ -624,7 +624,11 @@ func (s Server) itemSearch() http.HandlerFunc {
 						}
 						s.Logger.Debugf("itemSearch: Searched Blibli with q%d: %#v, %d item(s) found, TraceID: %s", i+1, q, len(is), tid)
 					} else {
-						s.Logger.Errorf("itemSearch: Error searching Blibli with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
+						if errors.Is(err, client.ErrBlibliItemNotFound) {
+							s.Logger.Debugf("itemSearch: Item not found when searching Blibli with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
+						} else {
+							s.Logger.Errorf("itemSearch: Error searching Blibli with q%d: %#v, err: %v, TraceID: %s", i+1, q, err, tid)
+						}
 					}
 				}
 			} else if bc != "" {
