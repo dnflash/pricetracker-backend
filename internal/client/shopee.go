@@ -109,10 +109,10 @@ func (c Client) ShopeeGetItem(url string, useCache bool) (model.Item, error) {
 
 	i = shopeeItemResp.Data.toItem()
 	if iJSON, err := json.Marshal(i); err != nil {
-		c.Logger.Errorf("ShopeeGetItem: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+		c.Logger.Errorf("ShopeeGetItem: Error marshalling Items to cache, key: %s, Item: %+v, err: %v", cacheKey, i, err)
 	} else {
 		if err = c.Redis.Set(ctx, cacheKey, iJSON, 1*time.Hour).Err(); err != nil {
-			c.Logger.Errorf("ShopeeGetItem: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+			c.Logger.Errorf("ShopeeGetItem: Error caching Items, key: %s, Item: %+v, err: %v", cacheKey, i, err)
 		}
 	}
 

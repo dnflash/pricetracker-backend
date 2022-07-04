@@ -261,6 +261,18 @@ func (c Client) blibliGetSKU(urlStr string) (string, error) {
 }
 
 func (c Client) blibliResolveShareLink(url string) (string, error) {
+	ctx := context.TODO()
+	cacheKey := "BRSL-" + url
+	cached, err := c.Redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		c.Logger.Infof("blibliResolveShareLink: Cache found, key: %s", cacheKey)
+		return cached, nil
+	} else {
+		if err != redis.Nil {
+			c.Logger.Errorf("blibliResolveShareLink: Error getting getting Redis cache with key: %s, err: %v", cacheKey, err)
+		}
+	}
+
 	req, err := newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("error creating request from URL: %s, err: %v", url, err)
@@ -281,7 +293,13 @@ func (c Client) blibliResolveShareLink(url string) (string, error) {
 			url, http.StatusTemporaryRedirect, resp, misc.BytesLimit(body, 1000), req)
 	}
 	_, _ = io.Copy(io.Discard, bodyRdr)
-	return resp.Header.Get("Location"), nil
+
+	location := resp.Header.Get("Location")
+	if err = c.Redis.Set(ctx, cacheKey, location, 72*time.Hour).Err(); err != nil {
+		c.Logger.Errorf("blibliResolveShareLink: Error caching resolved URL, key: %s, URL: %s, err: %v", cacheKey, location, err)
+	}
+
+	return location, nil
 }
 
 func blibliNormalizeSKU(sku string) (string, bool) {
@@ -435,10 +453,10 @@ func (c Client) BlibliSearch(query string) ([]model.Item, error) {
 	}
 
 	if isJSON, err := json.Marshal(is); err != nil {
-		c.Logger.Errorf("BlibliSearch: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, is, err)
+		c.Logger.Errorf("BlibliSearch: Error marshalling Items to cache, key: %s, Item: %+v, err: %v", cacheKey, is, err)
 	} else {
 		if err = c.Redis.Set(ctx, cacheKey, isJSON, 12*time.Hour).Err(); err != nil {
-			c.Logger.Errorf("BlibliSearch: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, is, err)
+			c.Logger.Errorf("BlibliSearch: Error caching Items, key: %s, Item: %+v, err: %v", cacheKey, is, err)
 		}
 	}
 

@@ -163,13 +163,13 @@ func runApp() error {
 			MaxHeaderBytes: 1024,
 		}
 		appLogger.Info("Serving on", httpSrv.Addr)
-		//if err = httpSrv.ListenAndServeTLS(
-		//	"/etc/letsencrypt/live/trackee.xyz/fullchain.pem",
-		//	"/etc/letsencrypt/live/trackee.xyz/privkey.pem",
-		//); err != nil {
-		//	appLogger.Errorf("Error listen and serve TLS: %v", err)
-		//}
-		return httpSrv.ListenAndServe()
+		if err = httpSrv.ListenAndServeTLS(
+			"/etc/letsencrypt/live/trackee.xyz/fullchain.pem",
+			"/etc/letsencrypt/live/trackee.xyz/privkey.pem",
+		); err != nil {
+			appLogger.Errorf("Error listen and serve TLS: %v", err)
+		}
+		//return httpSrv.ListenAndServe()
 	}
 	select {}
 }

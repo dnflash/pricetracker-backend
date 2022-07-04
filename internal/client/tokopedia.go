@@ -99,10 +99,10 @@ func (c Client) TokopediaGetItem(url string, useCache bool) (model.Item, error) 
 	}
 
 	if iJSON, err := json.Marshal(i); err != nil {
-		c.Logger.Errorf("TokopediaGetItem: Error marshalling Item to cache, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+		c.Logger.Errorf("TokopediaGetItem: Error marshalling Items to cache, key: %s, Item: %+v, err: %v", cacheKey, i, err)
 	} else {
 		if err = c.Redis.Set(ctx, cacheKey, iJSON, 1*time.Hour).Err(); err != nil {
-			c.Logger.Errorf("TokopediaGetItem: Error caching Item, key: %s, Item: %+v, err: %v", cacheKey, i, err)
+			c.Logger.Errorf("TokopediaGetItem: Error caching Items, key: %s, Item: %+v, err: %v", cacheKey, i, err)
 		}
 	}
 
@@ -129,6 +129,18 @@ func tokopediaNormalizeURL(urlStr string) (string, bool, error) {
 }
 
 func (c Client) tokopediaResolveShareLink(url string) (string, error) {
+	ctx := context.TODO()
+	cacheKey := "TRSL-" + url
+	cached, err := c.Redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		c.Logger.Infof("tokopediaResolveShareLink: Cache found, key: %s", cacheKey)
+		return cached, nil
+	} else {
+		if err != redis.Nil {
+			c.Logger.Errorf("tokopediaResolveShareLink: Error getting getting Redis cache with key: %s, err: %v", cacheKey, err)
+		}
+	}
+
 	req, err := newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("error creating request from URL: %s, err: %w", url, err)
@@ -154,6 +166,11 @@ func (c Client) tokopediaResolveShareLink(url string) (string, error) {
 	} else if isShareLink {
 		return "", fmt.Errorf("failed resolving share link: recursive")
 	}
+
+	if err = c.Redis.Set(ctx, cacheKey, normURL, 72*time.Hour).Err(); err != nil {
+		c.Logger.Errorf("tokopediaResolveShareLink: Error caching resolved URL, key: %s, URL: %s, err: %v", cacheKey, normURL, err)
+	}
+
 	return normURL, nil
 }
 
