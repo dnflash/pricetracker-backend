@@ -38,7 +38,7 @@ func (db Database) UserFindByID(ctx context.Context, id string) (model.User, err
 	return u, errors.Wrapf(err, "error finding User with ID: %s", id)
 }
 
-func (db Database) UserDeviceFCMTokensFindByTrackedItem(ctx context.Context, itemID primitive.ObjectID) ([]model.User, error) {
+func (db Database) UsersDeviceFCMTokensFindByTrackedItem(ctx context.Context, itemID primitive.ObjectID) ([]model.User, error) {
 	var us []model.User
 	cur, err := db.Collection(CollectionUsers).Find(ctx,
 		bson.M{"tracked_items.item_id": itemID},
@@ -53,14 +53,47 @@ func (db Database) UserDeviceFCMTokensFindByTrackedItem(ctx context.Context, ite
 	return us, nil
 }
 
-func (db Database) UserTrackedItemUpdateOrAdd(ctx context.Context, userID string, ti model.TrackedItem) error {
-	objID, err := primitive.ObjectIDFromHex(userID)
+func (db Database) UserTrackedItemAdd(ctx context.Context, userID string, ti model.TrackedItem) error {
+	userOID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
-		return errors.Wrapf(err, "error creating ObjectID from hex: %s", userID)
+		return errors.Wrapf(err, "error creating userOID from hex: %s", userID)
+	}
+	ti.CreatedAt = primitive.NewDateTimeFromTime(time.Now())
+	ti.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
+	res, err := db.Collection(CollectionUsers).UpdateOne(
+		ctx,
+		bson.M{"_id": userOID},
+		bson.M{
+			"$push": bson.M{
+				"tracked_items": bson.M{
+					"$each":     []model.TrackedItem{ti},
+					"$position": 0,
+					"$slice":    25,
+				},
+			},
+			"$set": bson.M{
+				"updated_at": primitive.NewDateTimeFromTime(time.Now()),
+			},
+		},
+	)
+	if err != nil {
+		return errors.Wrapf(err, "error when adding TrackedItem to User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
+	}
+	if res.ModifiedCount == 0 {
+		return errors.Wrapf(ErrNoDocumentsModified,
+			"User not modified when adding TrackedItem to User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
+	}
+	return nil
+}
+
+func (db Database) UserTrackedItemUpdate(ctx context.Context, userID string, ti model.TrackedItem) error {
+	userOID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return errors.Wrapf(err, "error creating userOID from hex: %s", userID)
 	}
 	res, err := db.Collection(CollectionUsers).UpdateOne(
 		ctx,
-		bson.M{"_id": objID, "tracked_items.item_id": ti.ItemID},
+		bson.M{"_id": userOID, "tracked_items.item_id": ti.ItemID},
 		bson.M{"$set": bson.M{
 			"tracked_items.$.price_lower_threshold": ti.PriceLowerThreshold,
 			"tracked_items.$.notification_enabled":  ti.NotificationEnabled,
@@ -70,12 +103,12 @@ func (db Database) UserTrackedItemUpdateOrAdd(ctx context.Context, userID string
 		}},
 	)
 	if err != nil {
-		return errors.Wrapf(err, "error updating or adding TrackedItem to User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
+		return errors.Wrapf(err, "error updating TrackedItem on User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
 	}
-	if res.MatchedCount != 0 {
-		if _, err := db.Collection(CollectionUsers).UpdateOne(
+	if res.ModifiedCount != 0 {
+		if _, err = db.Collection(CollectionUsers).UpdateOne(
 			ctx,
-			bson.M{"_id": objID},
+			bson.M{"_id": userOID},
 			bson.M{"$push": bson.M{
 				"tracked_items": bson.M{
 					"$each": []model.TrackedItem{},
@@ -83,34 +116,10 @@ func (db Database) UserTrackedItemUpdateOrAdd(ctx context.Context, userID string
 				},
 			}},
 		); err != nil {
-			return errors.Wrapf(err, "error sorting TrackedItems after updating on User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
+			return errors.Wrapf(err, "error sorting TrackedItems after update on User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
 		}
 	} else {
-		ti.CreatedAt = primitive.NewDateTimeFromTime(time.Now())
-		ti.UpdatedAt = primitive.NewDateTimeFromTime(time.Now())
-		res, err = db.Collection(CollectionUsers).UpdateOne(
-			ctx,
-			bson.M{"_id": objID},
-			bson.M{
-				"$push": bson.M{
-					"tracked_items": bson.M{
-						"$each":     []model.TrackedItem{ti},
-						"$position": 0,
-						"$sort":     bson.M{"updated_at": -1},
-						"$slice":    25,
-					},
-				},
-				"$set": bson.M{
-					"updated_at": primitive.NewDateTimeFromTime(time.Now()),
-				},
-			},
-		)
-		if err != nil {
-			return errors.Wrapf(err, "error when adding TrackedItem to User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
-		}
-	}
-	if res.ModifiedCount == 0 {
-		return errors.Wrapf(ErrNoDocumentsModified, "User not modified when updating or adding TrackedItem to User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
+		return errors.Wrapf(ErrNoDocumentsModified, "User not modified when updating TrackedItem on User with ID: %s, ItemID: %s", userID, ti.ItemID.Hex())
 	}
 	return nil
 }

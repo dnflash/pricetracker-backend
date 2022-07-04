@@ -10,8 +10,10 @@ import (
 )
 
 type Config struct {
+	ServerEnabled     bool          `json:"server_enabled"`
 	ServerAddress     string        `json:"server_address"`
 	DatabaseURI       string        `json:"database_uri"`
+	FetcherEnabled    bool          `json:"fetcher_enabled"`
 	FetchDataInterval time.Duration `json:"-"`
 	LogLevel          logger.Level  `json:"-"`
 	LogToFile         bool          `json:"log_to_file"`
@@ -20,8 +22,10 @@ type Config struct {
 }
 
 type tomlConfig struct {
+	ServerEnabled     bool   `toml:"server_enabled"`
 	ServerAddress     string `toml:"server_address"`
 	DatabaseURI       string `toml:"database_uri"`
+	FetcherEnabled    bool   `toml:"fetcher_enabled"`
 	FetchDataInterval string `toml:"fetch_data_interval"`
 	LogLevel          string `toml:"log_level"`
 	LogToFile         bool   `toml:"log_to_file"`
@@ -31,9 +35,13 @@ type tomlConfig struct {
 
 func GetConfig(path string) (*Config, error) {
 	var tc tomlConfig
-	_, err := toml.DecodeFile(path, &tc)
+	md, err := toml.DecodeFile(path, &tc)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to decode toml file with path: %s", path)
+	}
+
+	if !md.IsDefined("server_enabled") {
+		return nil, errors.New("server_enabled option is not set")
 	}
 
 	if tc.ServerAddress == "" {
@@ -42,6 +50,10 @@ func GetConfig(path string) (*Config, error) {
 
 	if tc.DatabaseURI == "" {
 		tc.DatabaseURI = "mongodb://localhost:27017"
+	}
+
+	if !md.IsDefined("fetcher_enabled") {
+		return nil, errors.New("fetcher_enabled option is not set")
 	}
 
 	if tc.FetchDataInterval == "" {
@@ -77,8 +89,10 @@ func GetConfig(path string) (*Config, error) {
 	}
 
 	return &Config{
+		ServerEnabled:     tc.ServerEnabled,
 		ServerAddress:     tc.ServerAddress,
 		DatabaseURI:       tc.DatabaseURI,
+		FetcherEnabled:    tc.FetcherEnabled,
 		FetchDataInterval: fetchDataInterval,
 		LogLevel:          logLevel,
 		LogToFile:         tc.LogToFile,

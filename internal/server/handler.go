@@ -10,10 +10,17 @@ func (s Server) writeJsonResponse(w http.ResponseWriter, response any, statusCod
 		s.Logger.Errorf("Error encoding response: %+v, err: %v", response, err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	} else {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(statusCode)
 		if _, err = w.Write(resp); err != nil {
 			s.Logger.Errorf("Error writing JSON response: %s, err: %v", resp, err)
 		}
+	}
+}
+
+func (s Server) notFoundHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.Logger.Debugf("notFoundHandler: Requested resource not found, TraceID: %s", getTraceContext(r.Context()).traceID)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	}
 }

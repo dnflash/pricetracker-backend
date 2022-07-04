@@ -43,18 +43,18 @@ func (c Client) FCMSendNotification(fcmReqBody FCMSendRequest) (FCMSendResponse,
 
 	req, err := newRequest(http.MethodPost, "https://fcm.googleapis.com/fcm/send", bytes.NewReader(reqBody))
 	if err != nil {
-		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: error creating HTTP request from body: %s", reqBody)
+		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: error creating HTTP request from body:\n%s", reqBody)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "key="+c.FCMKey)
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: error doing request: %+v", req)
+		return FCMSendResponse{}, errors.Wrapf(err, "FCMSendNotification: error doing request: %#v", req)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			c.Logger.Error("FCMSendNotification: error closing response body, req: %+v, err: %v", req, err)
+			c.Logger.Errorf("FCMSendNotification: error closing response body, resp:\n%#v,\nreq:\n%#v,\nerr: %v", resp, req, err)
 		}
 	}()
 
@@ -62,9 +62,11 @@ func (c Client) FCMSendNotification(fcmReqBody FCMSendRequest) (FCMSendResponse,
 	respBody, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 300000))
 	if err != nil {
 		return fcmSendResp, errors.Wrapf(err,
-			"FCMSendNotification: error reading FCMSendAPI response body, req: %+v, response body: %s", req, respBody)
+			"FCMSendNotification: error reading FCMSendAPI response body, status: %s, resp body:\n%s,\nreq:\n%#v,\nreq body:\n%s",
+			resp.Status, respBody, req, reqBody)
 	}
 	err = json.Unmarshal(respBody, &fcmSendResp)
 	return fcmSendResp, errors.Wrapf(err,
-		"FCMSendNotification: error unmarshalling FCMSendAPI response body, req: %+v, response body: %s", req, respBody)
+		"FCMSendNotification: error unmarshalling FCMSendAPI response body, status: %s, resp body:\n%s,\nreq:\n%#v,\nreq body:\n%s",
+		resp.Status, respBody, req, reqBody)
 }

@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"pricetracker/internal/model"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -31,7 +32,7 @@ func setUserContext(ctx context.Context, uc userContext) context.Context {
 func getUserContext(ctx context.Context) (userContext, error) {
 	uc, ok := ctx.Value(userContextKey{}).(userContext)
 	if !ok {
-		return uc, errors.New("failed to get userContext")
+		return uc, errors.New("failed to get UserContext")
 	}
 	return uc, nil
 }
@@ -39,12 +40,13 @@ func getUserContext(ctx context.Context) (userContext, error) {
 func setTraceContext(ctx context.Context, tc traceContext) context.Context {
 	return context.WithValue(ctx, traceContextKey{}, tc)
 }
-func getTraceContext(ctx context.Context) (traceContext, error) {
-	tc, ok := ctx.Value(traceContextKey{}).(traceContext)
-	if !ok {
-		return tc, errors.New("failed to get traceContext")
-	}
-	return tc, nil
+func getTraceContext(ctx context.Context) traceContext {
+	tc, _ := ctx.Value(traceContextKey{}).(traceContext)
+	return tc
+}
+
+func (s Server) maxBytesMw(next http.Handler) http.Handler {
+	return http.MaxBytesHandler(next, 3000)
 }
 
 func (s Server) loggingMw(next http.Handler) http.Handler {
@@ -52,28 +54,32 @@ func (s Server) loggingMw(next http.Handler) http.Handler {
 		start := time.Now()
 		traceID := uuid.NewString()
 		s.Logger.Debugf("loggingMw: Incoming request %s %s from %s, UA: %s, TraceID: %s",
-			r.Method, r.URL, r.RemoteAddr, r.UserAgent(), traceID)
+			r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent(), traceID)
+
+		defer func() {
+			if re := recover(); re != nil {
+				s.Logger.Errorf("loggingMw: Handler crashed, err: %v, TraceID: %s, stack trace:\n%s", re, traceID, debug.Stack())
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+		}()
 
 		tc := traceContext{traceID: traceID}
 		next.ServeHTTP(w, r.WithContext(setTraceContext(r.Context(), tc)))
 
 		s.Logger.Debugf("loggingMw: Incoming request %s %s took %dms, TraceID: %s",
-			r.Method, r.URL, time.Now().Sub(start).Milliseconds(), traceID)
+			r.Method, r.URL.Path, time.Now().Sub(start).Milliseconds(), traceID)
 	})
-}
-
-func (s Server) maxBytesMw(next http.Handler) http.Handler {
-	return http.MaxBytesHandler(next, 3000)
 }
 
 func (s Server) authMw(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tid := getTraceContext(r.Context()).traceID
 		lt := r.Header.Get("Authorization")
 		if strings.HasPrefix(lt, "Bearer ") {
 			lt = strings.TrimPrefix(lt, "Bearer ")
 			token, err := jwt.Parse([]byte(lt), jwt.WithKey(jwa.HS256, s.AuthSecretKey), jwt.WithValidate(true))
 			if err != nil {
-				s.Logger.Debugf("authMw: Failed to validate login token, err: %v", err)
+				s.Logger.Debugf("authMw: Failed to validate login token, err: %v, TraceID: %s", err, tid)
 				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
@@ -82,14 +88,14 @@ func (s Server) authMw(next http.Handler) http.Handler {
 			deviceIDStr, ok := deviceID.(string)
 			if !ok {
 				tokenMap, err := token.AsMap(r.Context())
-				s.Logger.Errorf("authMw: Valid token contains no device claim, token: %#v, Token.asMap err: %v", tokenMap, err)
+				s.Logger.Errorf("authMw: Valid token contains no device claim, token: %#v, Token.asMap err: %v, TraceID: %s", tokenMap, err, tid)
 				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
 
 			u, err := s.DB.UserFindByID(r.Context(), token.Subject())
 			if err != nil {
-				s.Logger.Debug("authMw: Error finding User from login token, err:", err)
+				s.Logger.Debugf("authMw: Error finding User from login token, err: %v, TraceID: %s", err, tid)
 				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
@@ -103,13 +109,15 @@ func (s Server) authMw(next http.Handler) http.Handler {
 
 				err = bcrypt.CompareHashAndPassword(d.LoginToken.Token, tokenHash.Sum(nil))
 				if err != nil {
-					s.Logger.Debugf("authMw: Error when comparing LoginToken hashes for UserID: %s, DeviceID: %s, err: %v",
-						u.ID.Hex(), d.DeviceID, err)
+					s.Logger.Debugf("authMw: Error when comparing LoginToken hashes for UserID: %s, DeviceID: %s, err: %v, TraceID: %s",
+						u.ID.Hex(), d.DeviceID, err, tid)
 					break
 				}
 
+				s.Logger.Debugf("authMw: UserID: %s, DeviceID: %s, TraceID: %s", u.ID.Hex(), d.DeviceID, tid)
+
 				if err = s.DB.UserDeviceLastSeenUpdate(r.Context(), u.ID.Hex(), d.DeviceID); err != nil {
-					s.Logger.Errorf("authMw: Error updating Device LastSeen, err: %v", err)
+					s.Logger.Errorf("authMw: Error updating Device LastSeen, err: %v, TraceID: %s", err, tid)
 				}
 
 				uc := userContext{

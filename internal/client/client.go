@@ -12,11 +12,9 @@ type Client struct {
 }
 
 type logger interface {
-	Debug(v ...any)
-	Info(v ...any)
-	Error(v ...any)
 	Debugf(format string, v ...any)
 	Infof(format string, v ...any)
+	Warnf(format string, v ...any)
 	Errorf(format string, v ...any)
 }
 
@@ -31,5 +29,5 @@ func newRequest(method string, url string, body io.Reader) (*http.Request, error
 
 func setDefaultRequestHeader(r *http.Request) {
 	r.Header.Set("User-Agent", "Mozilla/5.0")
-	r.Header.Set("Accept", "application/json")
+	r.Header.Set("Accept", "*/*")
 }
