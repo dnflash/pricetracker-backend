@@ -437,7 +437,7 @@ func (c Client) BlibliSearch(query string) ([]model.Item, error) {
 			"error unmarshalling BlibliSearchAPI response body, status: %s, body:\n%s,\nerr: %v",
 			resp.Status, misc.BytesLimit(body, 2000), err)
 	}
-	if blibliSearchResp.Code != 422 {
+	if blibliSearchResp.Code == 422 {
 		return is, fmt.Errorf("%w: error getting data from BlibliSearchAPI, status: %s, body:\n%s",
 			ErrBlibliItemNotFound, resp.Status, misc.BytesLimit(body, 200))
 	}
