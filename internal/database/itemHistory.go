@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -40,4 +41,17 @@ func (db Database) ItemHistoryFindRange(
 			itemID, start.Format(time.RFC3339), end.Format(time.RFC3339))
 	}
 	return ihs, nil
+}
+
+func (db Database) ItemHistoryFindLatest(ctx context.Context, itemID string) (model.ItemHistory, error) {
+	var ih model.ItemHistory
+	itemOID, err := primitive.ObjectIDFromHex(itemID)
+	if err != nil {
+		return ih, errors.Wrapf(err, "error generating ObjectID from hex: %s", itemID)
+	}
+	res := db.Collection(CollectionItemHistories).FindOne(ctx, bson.M{"item_id": itemOID}, options.FindOne().SetSort(bson.M{"ts": -1}))
+	if err = res.Decode(&ih); err != nil {
+		return ih, fmt.Errorf("%w: error getting latest ItemHistory for ItemID: %s", err, itemID)
+	}
+	return ih, nil
 }

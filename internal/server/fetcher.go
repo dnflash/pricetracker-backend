@@ -103,6 +103,12 @@ func (s Server) fetchData(ctx context.Context, is []model.Item) {
 			s.Logger.Errorf("fetchData: Error updating Item, err: %v", err)
 		}
 
+		lastIH, err := s.DB.ItemHistoryFindLatest(ctx, i.ID.Hex())
+		if err != nil {
+			s.Logger.Errorf("fetchData: Error getting latest ItemHistory for Item: %s, ID: %s, err: %v", itemName, i.ID.Hex(), err)
+			continue
+		}
+
 		s.Logger.Debugf("fetchData: Inserting ItemHistory for Item: %s, ID: %s", itemName, i.ID.Hex())
 		ih := model.ItemHistory{
 			ItemID:    i.ID,
@@ -116,7 +122,7 @@ func (s Server) fetchData(ctx context.Context, is []model.Item) {
 			s.Logger.Errorf("fetchData: Error inserting ItemHistory, err: %v", err)
 		}
 
-		if ecommerceItem.Price != i.Price {
+		if ecommerceItem.Price != lastIH.Price {
 			if ecommerceItem.Stock == 0 {
 				s.Logger.Debugf("fetchData: Stock is 0 for Item: %s, ID: %s, will not notify Users", itemName, i.ID.Hex())
 				continue
