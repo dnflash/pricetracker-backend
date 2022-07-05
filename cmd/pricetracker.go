@@ -168,6 +168,7 @@ func runApp() error {
 			"/etc/letsencrypt/live/trackee.xyz/privkey.pem",
 		); err != nil {
 			appLogger.Errorf("Error listen and serve TLS: %v", err)
+			return err
 		}
 		//return httpSrv.ListenAndServe()
 	}

@@ -176,50 +176,50 @@ func (c Client) tokopediaResolveShareLink(url string) (string, error) {
 
 func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
 	var i model.Item
-	pdpSessionIdx := bytes.Index(pageBytes, []byte("pdpSession\":\"{\\\""))
+	pdpSessionIdx := bytes.Index(pageBytes, []byte("\"pdpSession\":\"{"))
 	if pdpSessionIdx < 0 {
 		return i, errors.Wrapf(errTokopediaNotPDP, "PDP session not found")
 	}
-	page := string(pageBytes[pdpSessionIdx+len("pdpSession\":\"{\\\""):])
+	page := string(pageBytes[pdpSessionIdx+len("\"pdpSession\":\"{"):])
 
-	merchantID, err := tokopediaFindValue(page, "sid\\\":", ",", false, 32)
+	merchantID, err := tokopediaFindValue(page, "\\\"sid\\\":", ",", false, 32)
 	if err != nil {
-		return i, errors.Wrapf(err, "failed to find merchantID")
+		return i, fmt.Errorf("%w: failed to find merchantID", err)
 	} else if _, err = strconv.Atoi(merchantID); err != nil {
 		return i, errors.Wrapf(err, "invalid merchantID")
 	}
 
-	productID, err := tokopediaFindValue(page, "pi\\\":", ",", false, 32)
+	productID, err := tokopediaFindValue(page, "\\\"pi\\\":", ",", false, 32)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed to find productID")
 	} else if _, err = strconv.Atoi(productID); err != nil {
 		return i, errors.Wrapf(err, "invalid productID")
 	}
 
-	parentID, err := tokopediaFindValue(page, "pi\\\":", ",", false, 32)
+	parentID, err := tokopediaFindValue(page, "\\\"pid\\\":", ",", false, 32)
 	if err != nil {
 		parentID = ""
 	} else if _, err = strconv.Atoi(parentID); err != nil {
 		return i, errors.Wrapf(err, "invalid parentID")
 	}
 
-	shopHandle, err := tokopediaFindValue(page, "sd\\\":", ",", true, 32)
+	shopHandle, err := tokopediaFindValue(page, "\\\"sd\\\":", ",", true, 32)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed getting shopHandle")
 	}
-	urlPart, err := tokopediaFindValue(page, "alias\":", ",", true, 300)
+	urlPart, err := tokopediaFindValue(page, "\"alias\":", ",", true, 300)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed getting urlPart")
 	}
 
-	itemName, err := tokopediaFindValue(page, "pn\\\":", ",\\\"", true, 300)
+	itemName, err := tokopediaFindValue(page, "\\\"pn\\\":", ",\\\"", true, 300)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed getting itemName")
 	}
 	_, variationID, _ := strings.Cut(itemName, " - ")
 
 	var itemPrice int
-	itemPriceStr, err := tokopediaFindValue(page, "pr\\\":", ",", false, 32)
+	itemPriceStr, err := tokopediaFindValue(page, "\\\"pr\\\":", ",", false, 32)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed getting itemPrice")
 	} else if itemPrice, err = strconv.Atoi(itemPriceStr); err != nil {
@@ -227,7 +227,7 @@ func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
 	}
 
 	var itemStock int
-	itemStockStr, err := tokopediaFindValue(page, "st\\\":", ",", false, 32)
+	itemStockStr, err := tokopediaFindValue(page, "\\\"st\\\":", ",", false, 32)
 	if err != nil {
 		if errors.Is(err, errTokopediaFieldKeyNotFound) {
 			itemStockStr = "0"
@@ -250,7 +250,7 @@ func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
 	}
 
 	var itemRating float64
-	itemRatingStr, err := tokopediaFindValue(page, "rating\":", ",", false, 64)
+	itemRatingStr, err := tokopediaFindValue(page, "\"rating\":", ",", false, 64)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed getting itemRating")
 	} else if itemRating, err = strconv.ParseFloat(itemRatingStr, 64); err != nil {
@@ -258,7 +258,7 @@ func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
 	}
 
 	var itemSold int
-	itemSoldStr, err := tokopediaFindValue(page, "countSold\":", ",", true, 32)
+	itemSoldStr, err := tokopediaFindValue(page, "\"countSold\":", ",", true, 32)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed getting itemSold")
 	} else if itemSold, err = strconv.Atoi(itemSoldStr); err != nil {
