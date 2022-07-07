@@ -522,5 +522,5 @@ func blibliSoldParser(s string) int {
 	} else if sold, err := strconv.Atoi(s); err == nil {
 		return sold
 	}
-	return -1
+	return 0
 }
