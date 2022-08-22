@@ -238,7 +238,7 @@ func tokopediaParseProductPage(pageBytes []byte) (model.Item, error) {
 		return i, errors.Wrapf(err, "invalid itemStock")
 	}
 
-	imageURL, err := tokopediaFindValue(page, "{\"type\":\"image\",\"URLThumbnail\":", ",", true, 200)
+	imageURL, err := tokopediaFindValue(page, "\",\"URLThumbnail\":", ",", true, 200)
 	if err != nil {
 		return i, errors.Wrapf(err, "failed getting imageURL")
 	}
@@ -310,10 +310,7 @@ func tokopediaFindValue(page string, key string, sep string, unquote bool, maxLe
 		val = strings.ReplaceAll(val, "\\\"", "\"")
 		if unquote {
 			unqVal, err := strconv.Unquote(val)
-			if err != nil {
-				return "", errors.Wrapf(err, "failed unquoting value for key (%#v), val: %#v",
-					key, misc.StringLimit(val, misc.Max(maxLength+100, 250)))
-			} else {
+			if err == nil {
 				val = unqVal
 			}
 		}
