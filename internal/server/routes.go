@@ -10,6 +10,10 @@ func (s Server) Router() *mux.Router {
 	r.Use(s.maxBytesMw)
 	r.Use(s.loggingMw)
 
+	r.HandleFunc("/about", serveAboutPage)
+	r.HandleFunc("/favicon.ico", serveFavIcon)
+	r.PathPrefix("/assets").Handler(http.StripPrefix("/assets", http.FileServer(http.Dir("static/assets"))))
+
 	api := r.PathPrefix("/api").Subrouter()
 
 	api.HandleFunc("/user/register", s.userRegister()).Methods(http.MethodPost)
@@ -36,4 +40,12 @@ func (s Server) Router() *mux.Router {
 	r.PathPrefix("").Handler(s.notFoundHandler())
 
 	return r
+}
+
+func serveAboutPage(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "static/about.html")
+}
+
+func serveFavIcon(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "static/favicon.png")
 }
